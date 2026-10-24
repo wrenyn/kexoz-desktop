@@ -11,7 +11,7 @@ export const normalizeSubdomain = (v: string) =>
 export const extractError = (err: unknown): string => {
   if (axios.isAxiosError(err)) {
     const msg = err.response?.data?.message
-    if (typeof msg === 'string' && msg.trim()) return msg
+    if (typeof msg === 'string' && msg.trim()) return msg.charAt(0).toUpperCase() + msg.slice(1)
   }
   if (err instanceof Error && err.message.trim()) return err.message
   return 'Something went wrong while contacting the server.'

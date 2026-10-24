@@ -13,7 +13,8 @@ import {
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, updateClientAuth, fetchClientStats,
   googleLinkLoginUrl, fetchLinkStatus, tierOf, updateClientRoutes,
-  listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused
+  listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
+  addDomain, removeDomain
 } from './lib/api'
 import type { FolderShareConfig, NewShareRequest } from './lib/shares'
 import { useFolderShares } from './hooks/useFolderShares'
@@ -23,6 +24,7 @@ import { createTunnelConnection } from './lib/tunnel'
 import { useTheme } from './hooks/useTheme'
 import { useRequestLog } from './hooks/useRequestLog'
 import { useTunnelNames } from './hooks/useTunnelNames'
+import { useConfirm } from './hooks/useConfirm'
 
 import AppShell from './components/layout/AppShell'
 import Sidebar from './components/layout/Sidebar'
@@ -37,18 +39,23 @@ import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
 import NewShareModal from './components/modals/NewShareModal'
 
-// One shared toast configuration: the app renders a <Toaster> in both the gate
-// and the dashboard branches, so they must look and behave identically.
 const TOAST_OPTIONS = {
-  duration: 4000,
+  duration: 3500,
   style: {
+    boxShadow: 'var(--shadow-md)',
     background: 'var(--bg-elevated)',
     color: 'var(--text)',
-    border: '1px solid var(--border)',
+    border: '1px solid var(--border-bright)',
+    borderRadius: 10,
+    padding: '10px 14px',
+    maxWidth: 380,
     fontSize: 13,
+    fontWeight: 500,
+    lineHeight: 1.45,
   },
   success: { iconTheme: { primary: 'var(--green)', secondary: 'var(--bg-elevated)' } },
   error: { duration: 6000, iconTheme: { primary: 'var(--red)', secondary: 'var(--bg-elevated)' } },
+  loading: { iconTheme: { primary: 'var(--text-muted)', secondary: 'var(--border)' } },
 }
 
 export default function App() {
@@ -107,6 +114,7 @@ export default function App() {
   const { theme, toggleTheme } = useTheme()
   const { requestLog, totalRequests, retention, setRetention, addLogEntry, clearLog } = useRequestLog()
   const { names: tunnelNames, setName: onRenameTunnel } = useTunnelNames()
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   // Info and Error states removed in favor of toast
 
@@ -137,9 +145,9 @@ export default function App() {
     const prev = prevConnState.current
     prevConnState.current = connState
     if (prev === 'connected' && connState === 'disconnected') {
-      toast.loading('Connection lost. Reconnecting...', { id: 'conn-state', duration: Infinity })
+      toast.loading('Connection lost. Reconnecting…', { id: 'conn-state', duration: Infinity })
     } else if (prev === 'disconnected' && connState === 'connected') {
-      toast.success('Reconnected!', { id: 'conn-state', duration: 3000 })
+      toast.success('Back online', { id: 'conn-state', duration: 3000 })
     } else if (prev === 'connecting' && connState === 'connected' && step === 'dashboard') {
       // Already connected for first time - no toast needed, UI shows it
       toast.dismiss('conn-state')
@@ -389,13 +397,13 @@ export default function App() {
   const startGoogleVerify = useCallback(async (): Promise<void> => {
     if (!session || verifying) return
     if (!gauthEnabled) {
-      toast.error('Google verification is not enabled on this server.')
+      toast.error('Google sign-in isn’t available right now.')
       return
     }
     const attempt = ++verifyAttempt.current
     setVerifying(true)
     toast.dismiss()
-    toast.success('Complete Google sign-in in your browser…')
+    toast.loading('Finish signing in with Google in your browser', { id: 'google-signin', duration: 8000 })
     window.open(googleLinkLoginUrl(session.id), '_blank', 'noopener')
     const deadline = Date.now() + 5 * 60 * 1000
     try {
@@ -403,7 +411,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 2000))
         if (verifyAttempt.current !== attempt) return
         if (Date.now() > deadline) {
-          toast.error('Verification timed out. Please try again.')
+          toast.error('Sign-in timed out. Try again.', { id: 'google-signin' })
           return
         }
         try {
@@ -417,7 +425,7 @@ export default function App() {
             setPortInput(fresh.port ? String(fresh.port) : '')
             setSubdomainInput(fresh.subdomain)
             setDomainInput(fresh.customDomain)
-            toast.success('Google linked — 1 GB bandwidth unlocked.')
+            toast.success('Signed in. You now have 1 GB of bandwidth.', { id: 'google-signin' })
             setStep(cur => cur === 'gate' ? (fresh.subdomain ? 'dashboard' : 'subdomain') : cur)
             return
           }
@@ -442,7 +450,7 @@ export default function App() {
 
   const applyPort = async (port: number) => {
     if (!session) return
-    setIsBusy(true); toast.dismiss(); toast.success('Updating exposed port...')
+    setIsBusy(true)
     try {
       const next = await updateExposedPort(session.id, port)
       tunnelPort.current = next
@@ -456,7 +464,7 @@ export default function App() {
         const selected = persistentTunnels.find(tunnel => tunnel.id === selectedTunnelId)
         if (selected) void updateTunnel(session.id, { ...selected, port: next })
       }
-      toast.success(`Forwarding localhost:${next}`)
+      toast.success(`Now forwarding to localhost:${next}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally { setIsBusy(false) }
@@ -467,7 +475,7 @@ export default function App() {
     if (!session) return
     const name = normalizeSubdomain(subdomainInput)
     if (name.length < 3 || name.length > 32) {
-      toast.error('Subdomain must be 3–32 characters using letters, numbers, or hyphens.')
+      toast.error('Use 3–32 lowercase letters, numbers or dashes.')
       return
     }
     setIsBusy(true)
@@ -475,14 +483,14 @@ export default function App() {
       const availability = await checkSubdomainAvailability(name)
       if (!availability.available) {
         toast.error(availability.reserved
-          ? 'That subdomain is reserved for Kexoz infrastructure. Try another one.'
-          : 'That subdomain is already taken. Try another one.')
+          ? 'That name is reserved. Try another one.'
+          : 'That name is taken. Try another one.')
         return
       }
       await claimSubdomain(session.id, name)
-      setSession(cur => cur ? { ...cur, subdomain: name } : cur)
+      setSession(cur => cur ? { ...cur, subdomain: name, domains: cur.domains.includes(name) ? cur.domains : [...cur.domains, name] } : cur)
       setStep('dashboard')
-      toast.success('Subdomain reserved.')
+      toast.success(`${name}.${ROOT_DOMAIN} is yours`)
     } catch (err) {
       toast.error(extractError(err))
     } finally { setIsBusy(false) }
@@ -492,7 +500,7 @@ export default function App() {
     e.preventDefault()
     const p = Number(portInput)
     if (!Number.isInteger(p) || p < 1 || p > 65535) {
-      toast.error('Enter a valid TCP port between 1 and 65535.')
+      toast.error('Use a port between 1 and 65535.')
       return
     }
     await applyPort(p)
@@ -513,7 +521,7 @@ export default function App() {
           setPersistentTunnels(current => current.map(tunnel => tunnel.id === updated.id ? updated : tunnel))
         }
       }
-      toast.success('Custom domain mapped')
+      toast.success('Custom domain added. Now add the DNS record.')
     } catch (err) {
       toast.error(extractError(err))
     } finally { setIsBusy(false) }
@@ -534,7 +542,7 @@ export default function App() {
         }
       }
       setGauthEnabled(result.gauthEnabled)
-      toast.success(result.requireAuth ? 'Auth wall enabled' : 'Auth wall disabled')
+      toast.success(result.requireAuth ? 'Visitors now sign in with Google' : 'Google sign-in turned off')
     } catch (err) {
       toast.error(extractError(err))
     } finally { setIsBusy(false) }
@@ -563,7 +571,6 @@ export default function App() {
       tunnelClose.current = connection.close
     }
     void checkListening(tunnel.tunnelType === 'folder' ? null : tunnel.port)
-    toast.success(`Selected ${tunnel.subdomain}.${ROOT_DOMAIN}.`)
   }
 
   const startPersistentTunnel = async (tunnel: PersistentTunnel, folder?: FolderShareConfig) => {
@@ -580,7 +587,7 @@ export default function App() {
         setPersistentTunnels(current => current.map(item => item.id === reverted.id ? reverted : item))
         throw err
       }
-      toast.success(`Starting ${updated.subdomain}.${ROOT_DOMAIN}...`)
+      toast.success(`Sharing on ${updated.subdomain}.${ROOT_DOMAIN}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -599,7 +606,7 @@ export default function App() {
         tunnelClose.current = null
         setConnState('idle')
       }
-      toast.success(`${tunnel.subdomain}.${ROOT_DOMAIN} is stopped.`)
+      toast.success(`Stopped ${tunnel.subdomain}.${ROOT_DOMAIN}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -608,7 +615,14 @@ export default function App() {
   }
 
   const removePersistentTunnel = async (tunnel: PersistentTunnel) => {
-    if (!session || !window.confirm(`Delete ${tunnel.subdomain}.${ROOT_DOMAIN}?`)) return
+    if (!session) return
+    const accepted = await confirm({
+      title: 'Delete this share?',
+      message: <>The link <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong> stops working right away. The address stays yours, so you can use it again.</>,
+      confirmLabel: 'Delete share',
+      tone: 'danger',
+    })
+    if (!accepted) return
     setIsBusy(true)
     try {
       await deleteTunnel(session.id, tunnel.id)
@@ -620,7 +634,7 @@ export default function App() {
       disconnectShare(tunnel)
       removeFolder(tunnel.id)
       setPersistentTunnels(current => current.filter(item => item.id !== tunnel.id))
-      toast.success('Share deleted.')
+      toast.success('Share deleted')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -634,7 +648,7 @@ export default function App() {
     try {
       const updated = await setTunnelPaused(session.id, tunnel.id, paused)
       setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
-      toast.success(paused ? `${tunnel.subdomain} is paused. Visitors see a paused page.` : `${tunnel.subdomain} is live again.`)
+      toast.success(paused ? 'Paused. Visitors see a “paused” page for now.' : 'Resumed. Visitors can open the link again.')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -646,11 +660,6 @@ export default function App() {
     if (!session) return
     try {
       const name = normalizeSubdomain(request.subdomain)
-      const availability = await checkSubdomainAvailability(name)
-      if (!availability.available) {
-        toast.error('That address is already taken or reserved.')
-        return
-      }
       const isFolder = request.tunnelType === 'folder'
       // Folder shares get their real port from the local file server at start.
       const port = isFolder ? 1 : request.port
@@ -675,6 +684,43 @@ export default function App() {
     }
   }
 
+  const handleAddAddress = async (name: string): Promise<boolean> => {
+    if (!session) return false
+    try {
+      const domains = await addDomain(session.id, name)
+      setSession(cur => cur ? { ...cur, domains } : cur)
+      toast.success(`Added ${name}.${ROOT_DOMAIN}`)
+      return true
+    } catch (err) {
+      toast.error(extractError(err))
+      return false
+    }
+  }
+
+  const handleRemoveAddress = async (name: string) => {
+    if (!session) return
+    const accepted = await confirm({
+      title: 'Remove this address?',
+      message: <>Someone else could claim <strong>{name}.{ROOT_DOMAIN}</strong> after you remove it.</>,
+      confirmLabel: 'Remove address',
+      tone: 'danger',
+    })
+    if (!accepted) return
+    setIsBusy(true)
+    try {
+      const domains = await removeDomain(session.id, name)
+      setSession(cur => cur ? { ...cur, domains } : cur)
+      toast.success(`Removed ${name}.${ROOT_DOMAIN}`)
+    } catch (err) {
+      toast.error(extractError(err))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  const usedAddresses = new Set(persistentTunnels.map(tunnel => tunnel.subdomain))
+  const freeAddresses = (session?.domains ?? []).filter(name => !usedAddresses.has(name))
+
   const handleLogout = () => {
     clearClientId()
     window.location.reload()
@@ -682,14 +728,17 @@ export default function App() {
 
   return (
     <>
-      <Toaster position="bottom-right" toastOptions={TOAST_OPTIONS} />
+      <Toaster position="bottom-right" gutter={8} toastOptions={TOAST_OPTIONS} />
       {showNewTunnel && session && (
         <NewShareModal
           onClose={() => setShowNewTunnel(false)}
           tier={tierOf(session)}
+          addresses={freeAddresses}
+          onManageAddresses={() => { setShowNewTunnel(false); setActivePage('domains') }}
           onSubmit={createShare}
         />
       )}
+      {confirmDialog}
       <AppShell>
         {step === 'dashboard' && session && (
           <Sidebar
@@ -789,6 +838,10 @@ export default function App() {
             {activePage === 'domains' && (
               <DomainsPage
                 session={session}
+                tunnels={persistentTunnels}
+                tunnelNames={tunnelNames}
+                onAddAddress={handleAddAddress}
+                onRemoveAddress={(name) => void handleRemoveAddress(name)}
                 domainInput={domainInput}
                 setDomainInput={setDomainInput}
                 onDomainSubmit={handleDomainSubmit}
@@ -806,8 +859,6 @@ export default function App() {
                 gauthEnabled={gauthEnabled}
               />
             )}
-
-            <Toaster position="bottom-right" toastOptions={TOAST_OPTIONS} />
           </>
         )}
       </AppShell>

@@ -16,6 +16,8 @@ export type ClientSession = {
   bandwidthLimit: number
   ownerEmail: string
   pathRoutes: PathRoute[]
+  /** Addresses (subdomains of ROOT_DOMAIN) this client owns. */
+  domains: string[]
 }
 
 export type IdentityResponse = {
@@ -29,6 +31,8 @@ export type IdentityResponse = {
   bandwidthLimit?: number
   ownerEmail?: string | null
   pathRoutes?: PathRoute[]
+  domains?: string[] | null
+  tunnels?: Array<{ subdomain?: string }> | null
 }
 
 export type AuthResponse = { requireAuth: boolean; gauthEnabled: boolean }
@@ -110,9 +114,13 @@ export const ensureClientIdentity = async (existingId: string | null): Promise<C
   const payload = existingId ? { id: existingId } : {}
   const { data } = await axios.post<IdentityResponse>(`${API_BASE_URL}/client/identity`, payload)
   if (!data.id) throw new Error('Server did not return a valid client id.')
+  const subdomain = data.subdomain?.trim().toLowerCase() ?? ''
+  // Servers without an address list still own the primary and share subdomains.
+  const domains = data.domains ?? [...new Set([subdomain, ...(data.tunnels ?? []).map(t => t.subdomain ?? '')].filter(Boolean))]
   return {
     id: data.id,
-    subdomain: data.subdomain?.trim().toLowerCase() ?? '',
+    subdomain,
+    domains,
     port: parsePort(data.port),
     customDomain: data.customDomain?.trim().toLowerCase() ?? '',
     requireAuth: data.requireAuth ?? false,
@@ -172,6 +180,16 @@ export const checkSubdomainAvailability = async (name: string): Promise<{ availa
 
 export const claimSubdomain = async (clientId: string, subdomain: string): Promise<void> => {
   await axios.post(`${API_BASE_URL}/subdomain/claim`, { clientId, subdomain })
+}
+
+export const addDomain = async (clientId: string, name: string): Promise<string[]> => {
+  const { data } = await axios.post<{ domains: string[] | null }>(`${API_BASE_URL}/client/domains`, { clientId, name })
+  return data.domains ?? []
+}
+
+export const removeDomain = async (clientId: string, name: string): Promise<string[]> => {
+  const { data } = await axios.delete<{ domains: string[] | null }>(`${API_BASE_URL}/client/domains/${encodeURIComponent(name)}`, { params: { clientId } })
+  return data.domains ?? []
 }
 
 export const updateExposedPort = async (clientId: string, port: number): Promise<number> => {

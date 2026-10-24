@@ -109,9 +109,6 @@ export default function TunnelsPage({
   folderShares, tunnelNames, onRenameTunnel, gauthEnabled, onAuthToggle
 }: Props) {
   const [showRoutes, setShowRoutes] = useState(false)
-  // Deleting a saved tunnel removes a persistent configuration, so it takes two
-  // clicks instead of one.
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const copyShareUrl = async (tunnel: PersistentTunnel) => {
@@ -225,39 +222,14 @@ export default function TunnelsPage({
                             Start
                           </button>
                         )}
-                        {confirmDeleteId === tunnel.id ? (
-                          <>
-                            <button
-                              className="ps-btn ps-btn-sm"
-                              style={{ color: 'var(--red)', borderColor: 'var(--red)' }}
-                              onClick={event => {
-                                event.stopPropagation()
-                                setConfirmDeleteId(null)
-                                onDeleteTunnel(tunnel)
-                              }}
-                              disabled={isBusy}
-                            >
-                              Confirm delete
-                            </button>
-                            <button
-                              className="ps-btn ps-btn-ghost ps-btn-sm"
-                              onClick={event => { event.stopPropagation(); setConfirmDeleteId(null) }}
-                              disabled={isBusy}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className="ps-btn ps-btn-ghost ps-btn-sm"
-                            style={{ color: 'var(--red)' }}
-                            onClick={event => { event.stopPropagation(); setConfirmDeleteId(tunnel.id) }}
-                            disabled={isBusy}
-                            aria-label={`Delete share ${tunnel.subdomain}`}
-                          >
-                            Delete
-                          </button>
-                        )}
+                        <button
+                          className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger"
+                          onClick={event => { event.stopPropagation(); onDeleteTunnel(tunnel) }}
+                          disabled={isBusy}
+                          aria-label={`Delete share ${tunnel.subdomain}`}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
 
