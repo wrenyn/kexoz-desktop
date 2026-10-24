@@ -93,7 +93,6 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now())
   const [showNewTunnel, setShowNewTunnel] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [autoStart, setAutoStart] = useState(() => window.localStorage.getItem('kexoz-autostart') === 'true')
   const [persistentTunnels, setPersistentTunnels] = useState<PersistentTunnel[]>([])
   const [selectedTunnelId, setSelectedTunnelId] = useState<string | null>(null)
   const [routeRules, setRouteRules] = useState<Array<{ path: string; port: number }>>(() => {
@@ -243,12 +242,13 @@ export default function App() {
     }
   }, [persistentTunnels, connState])
 
+  // Start-on-boot is no longer offered, so undo it for anyone who turned it on earlier.
   useEffect(() => {
-    if (window.kexoz?.setAutoStart) {
-      window.kexoz.setAutoStart(autoStart)
+    if (window.localStorage.getItem('kexoz-autostart') === 'true') {
+      void window.kexoz?.setAutoStart?.(false)
     }
-    window.localStorage.setItem('kexoz-autostart', String(autoStart))
-  }, [autoStart])
+    window.localStorage.removeItem('kexoz-autostart')
+  }, [])
 
   // --- Network Checks ---
   const checkListening = useCallback(async (port: number | null) => {
@@ -865,8 +865,6 @@ export default function App() {
               <SettingsPage
                 theme={theme}
                 onToggleTheme={toggleTheme}
-                autoStart={autoStart}
-                onToggleAutoStart={() => setAutoStart(!autoStart)}
                 session={session}
                 onVerify={() => void startGoogleVerify()}
                 onUpgrade={() => void handleUpgrade()}

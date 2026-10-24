@@ -4,8 +4,6 @@ import { ROOT_DOMAIN } from '../../lib/api'
 type Props = {
   theme: 'light' | 'dark'
   onToggleTheme: () => void
-  autoStart: boolean
-  onToggleAutoStart: () => void
   session: ClientSession
   onVerify: () => void
   onUpgrade: () => void
@@ -21,7 +19,7 @@ const TIER_LABEL: Record<string, string> = {
 }
 
 export default function SettingsPage({
-  theme, onToggleTheme, autoStart, onToggleAutoStart,
+  theme, onToggleTheme,
   session, onVerify, onUpgrade,
   verifying, gauthEnabled,
 }: Props) {
@@ -32,7 +30,7 @@ export default function SettingsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Settings</h1>
-          <p className="ps-page-subtitle">Appearance, startup and your account</p>
+          <p className="ps-page-subtitle">Appearance and your account</p>
         </div>
       </div>
 
@@ -44,32 +42,11 @@ export default function SettingsPage({
 
             <div className="ps-settings-row">
               <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Theme</div>
-                <div className="ps-settings-row-desc">Dark and light modes for this device</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  className={`ps-btn ps-btn-sm ${theme === 'dark' ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-                  onClick={() => theme !== 'dark' && onToggleTheme()}
-                >
-                  Dark
-                </button>
-                <button
-                  className={`ps-btn ps-btn-sm ${theme === 'light' ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-                  onClick={() => theme !== 'light' && onToggleTheme()}
-                >
-                  Light
-                </button>
-              </div>
-            </div>
-
-            <div className="ps-settings-row">
-              <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Start on boot</div>
-                <div className="ps-settings-row-desc">Launch Kexoz in the background at system startup</div>
+                <div className="ps-settings-row-label">Dark mode</div>
+                <div className="ps-settings-row-desc">Use the dark theme on this device</div>
               </div>
               <label className="ps-toggle">
-                <input type="checkbox" checked={autoStart} onChange={onToggleAutoStart} />
+                <input type="checkbox" checked={theme === 'dark'} onChange={onToggleTheme} aria-label="Dark mode" />
                 <div className="ps-toggle-track" />
               </label>
             </div>
