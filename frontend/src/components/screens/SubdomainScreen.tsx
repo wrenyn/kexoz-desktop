@@ -107,29 +107,6 @@ export default function SubdomainScreen({
       <div className="ps-onboard-body">
         <div className="ps-onboard-card animate-gate-card" style={{ maxWidth: 460 }}>
 
-          {/* Progress step */}
-          <div className="animate-gate-line-1" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            {/* Step 1 — active */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%', background: 'var(--accent)',
-                color: 'var(--text-on-accent)', fontSize: 11, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>1</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-strong)' }}>Claim subdomain</span>
-            </div>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            {/* Step 2 — pending */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)', color: 'var(--text-soft)', fontSize: 11, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>2</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-soft)' }}>Forward a port</span>
-            </div>
-          </div>
-
           {/* Title */}
           <h1 className="animate-gate-line-2" style={{ marginBottom: 6 }}>
             Choose your public URL
