@@ -339,7 +339,7 @@ export default function App() {
 
     try {
       const storedId = getClientId()
-      setStatusMessage(storedId ? 'Validating saved client identity...' : 'Generating a new client identity...')
+      setStatusMessage('Starting Kexoz…')
 
       const nextSession = await ensureClientIdentity(storedId)
       axios.defaults.headers.common['X-Kexoz-Client-ID'] = nextSession.id
@@ -823,7 +823,6 @@ export default function App() {
 
         {step === 'subdomain' && session && (
           <SubdomainScreen
-            session={session}
             subdomainInput={subdomainInput}
             setSubdomainInput={setSubdomainInput}
             onSubmit={handleSubdomainSubmit}
