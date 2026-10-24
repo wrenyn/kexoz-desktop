@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import type { ClientSession, PersistentTunnel, RequestLogEntry, UsagePoint } from '../../lib/api'
-import { tierOf } from '../../lib/api'
+import { tierOf, upgradeUrl } from '../../lib/api'
 import { shareStatus } from '../../lib/shares'
 import { isNoiseRequestPath } from '../../lib/tunnel'
 
@@ -81,14 +81,28 @@ export default function DashboardPage({
           <h1 className="ps-page-title">Dashboard</h1>
           <p className="ps-page-subtitle">Traffic and usage across all your shares</p>
         </div>
-        <div className="ps-header-actions">
-          <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>
-            New share
-          </button>
-        </div>
+        {tunnels.length > 0 && (
+          <div className="ps-header-actions">
+            <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>
+              New share
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="ps-page-content">
+        {tunnels.length === 0 && (
+          <div className="ps-card ps-overview-card animate-fade-up">
+            <div className="ps-overview-card-head">
+              <div>
+                <div className="ps-overview-card-title">Share your first app</div>
+                <div className="ps-overview-card-sub">Pick a port, terminal or folder on this computer and get a link anyone can open.</div>
+              </div>
+              <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New share</button>
+            </div>
+          </div>
+        )}
+
         <div className="ps-overview-stats animate-fade-up">
           <div className="ps-stat-card">
             <div className="ps-stat-card-label">Requests</div>
@@ -117,14 +131,24 @@ export default function DashboardPage({
             <div>
               <div className="ps-overview-card-title">Bandwidth</div>
               <div className="ps-overview-card-sub">
-                {formatBytes(session.bandwidthUsed)} of {formatBytes(session.bandwidthLimit)} used this month
+                {formatBytes(session.bandwidthUsed)} of {formatBytes(session.bandwidthLimit)} used
               </div>
             </div>
             <span className="ps-badge ps-badge-gray">{TIER_LABEL[tier]}</span>
           </div>
           <div className="ps-bandwidth-bar">
-            <div className="ps-bandwidth-fill" style={{ width: `${bwPct}%` }} />
+            <div className="ps-bandwidth-fill" style={{ width: `${bwPct}%`, background: bwPct >= 80 ? 'var(--yellow)' : undefined }} />
           </div>
+          {bwPct >= 80 && (
+            <div className="ps-overview-card-sub" style={{ marginTop: 10, color: 'var(--text)' }}>
+              {bwPct >= 100
+                ? 'You’ve used all your bandwidth. Visitors see a limit page until you upgrade.'
+                : 'You’re close to your bandwidth limit. Visitors see a limit page once it runs out.'}
+              {tier !== 'pro_plus' && (
+                <> <a href={upgradeUrl(session.id, tier === 'pro' ? 'pro_plus' : 'pro')} target="_blank" rel="noreferrer" style={{ color: 'var(--text-accent)' }}>See plans</a></>
+              )}
+            </div>
+          )}
           {chartData.length > 0 ? (
             <div style={{ height: 140, marginTop: 18 }}>
               <ResponsiveContainer width="100%" height="100%">

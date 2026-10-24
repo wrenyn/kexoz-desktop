@@ -38,7 +38,7 @@ export const EXPIRY_OPTIONS = [
 
 export const TYPE_LABELS: Record<TunnelType, string> = {
   http: 'Web',
-  e2e: 'Web · E2E',
+  e2e: 'Web · end-to-end encrypted',
   tcp: 'TCP',
   udp: 'UDP',
   pty: 'Terminal',

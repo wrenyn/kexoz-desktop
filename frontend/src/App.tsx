@@ -71,26 +71,12 @@ export default function App() {
     window.localStorage.setItem('kexoz-active-page', activePage)
   }, [activePage])
 
-  // Ctrl/Cmd+1…5 jump between pages, in the order shown in the sidebar.
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
-      const index = Number(event.key)
-      if (!Number.isInteger(index) || index < 1 || index > NAV_ITEMS.length) return
-      const target = event.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
-      event.preventDefault()
-      setActivePage(NAV_ITEMS[index - 1].id as Page)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
-
   const [subdomainInput, setSubdomainInput] = useState('')
   const [portInput, setPortInput] = useState('')
   const [domainInput, setDomainInput] = useState('')
 
-  const [statusMessage, setStatusMessage] = useState('Starting secure tunnel client...')
+  const [statusMessage, setStatusMessage] = useState('Starting Kexoz…')
+  const [loadError, setLoadError] = useState('')
   const [isBusy, setIsBusy] = useState(false)
   const [connState, setConnState] = useState<ConnectionState>('idle')
   const [gauthEnabled, setGauthEnabled] = useState(false)
@@ -116,11 +102,10 @@ export default function App() {
   const { names: tunnelNames, setName: onRenameTunnel } = useTunnelNames()
   const { confirm, dialog: confirmDialog } = useConfirm()
 
-  // Info and Error states removed in favor of toast
-
+  // Ctrl/Cmd+1…5 jump between pages in sidebar order; Ctrl/Cmd+N starts a new share.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey)) return
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
       const target = event.target as HTMLElement | null
       if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return
       const pages: Record<string, Page> = { '1': 'dashboard', '2': 'tunnels', '3': 'requests', '4': 'domains', '5': 'settings' }
@@ -218,21 +203,28 @@ export default function App() {
     return `https://${session.subdomain}.${ROOT_DOMAIN}`
   }, [session])
 
+  const persistentTunnelsRef = useRef(persistentTunnels)
+  persistentTunnelsRef.current = persistentTunnels
+
   useEffect(() => {
     routesRef.current = routeRules
     window.localStorage.setItem('kexoz-route-rules', JSON.stringify(routeRules))
-    if (session?.id && step === 'dashboard') {
-      void updateClientRoutes(session.id, routeRules)
+    if (!session?.id || step !== 'dashboard') return
+    const clientId = session.id
+    // Route rules change on every keystroke, so save them once typing pauses.
+    const timer = window.setTimeout(() => {
+      void updateClientRoutes(clientId, routeRules)
       if (selectedTunnelId && routeRules.length > 0) {
-        const selected = persistentTunnels.find(tunnel => tunnel.id === selectedTunnelId)
+        const selected = persistentTunnelsRef.current.find(tunnel => tunnel.id === selectedTunnelId)
         if (selected) {
           const connection = tunnelConnections.current.get(selectedTunnelId)
           if (connection) connection.routesRef.current = routeRules
-          void updateTunnel(session.id, { ...selected, pathRoutes: routeRules })
+          void updateTunnel(clientId, { ...selected, pathRoutes: routeRules })
         }
       }
-    }
-  }, [routeRules, session?.id, selectedTunnelId, persistentTunnels, step])
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [routeRules, session?.id, selectedTunnelId, step])
 
   useEffect(() => {
     if (window.kexoz?.updateTray) {
@@ -259,8 +251,8 @@ export default function App() {
       setPortListening(listening)
       if (lastPortListening.current === true && !listening) {
         void window.kexoz.notify?.({
-          title: 'Kexoz: local app offline',
-          body: `localhost:${port} is no longer accepting connections.`,
+          title: 'Your app stopped responding',
+          body: `localhost:${port} isn't accepting connections, so visitors will see an error.`,
         })
       }
       lastPortListening.current = listening
@@ -321,6 +313,7 @@ export default function App() {
 
   const bootstrapClient = useCallback(async (): Promise<void> => {
     setStep('loading')
+    setLoadError('')
     setIsBusy(true)
     toast.dismiss()
     setConnState('connecting')
@@ -374,8 +367,8 @@ export default function App() {
       }
     } catch (error) {
       setConnState('disconnected')
-      toast.error(extractError(error))
-      setStatusMessage('Could not reach the Kexoz API.')
+      console.error('Kexoz failed to start', error)
+      setLoadError('Can’t reach Kexoz')
     } finally {
       setIsBusy(false)
     }
@@ -441,7 +434,7 @@ export default function App() {
   const skipGate = useCallback(() => {
     verifyAttempt.current += 1
     setVerifying(false)
-    toast.success('Continuing as guest')
+    toast.dismiss('google-signin')
     setStep(cur => {
       if (cur !== 'gate') return cur
       return session?.subdomain ? 'dashboard' : 'subdomain'
@@ -721,7 +714,14 @@ export default function App() {
   const usedAddresses = new Set(persistentTunnels.map(tunnel => tunnel.subdomain))
   const freeAddresses = (session?.domains ?? []).filter(name => !usedAddresses.has(name))
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const accepted = await confirm({
+      title: 'Sign out of Kexoz?',
+      message: <>Your shares stop and this computer starts fresh. Signing in with Google again won’t bring back your addresses or plan yet, so only sign out if you’re done with this account.</>,
+      confirmLabel: 'Sign out',
+      tone: 'danger',
+    })
+    if (!accepted) return
     clearClientId()
     window.location.reload()
   }
@@ -747,17 +747,15 @@ export default function App() {
             requestCount={totalRequests}
             ownerEmail={session.ownerEmail}
             onLogin={() => void startGoogleVerify()}
-            onLogout={handleLogout}
+            verifying={verifying}
           />
         )}
 
         {step === 'loading' && (
           <LoadingScreen
             statusMessage={statusMessage}
-            errorMessage={""}
+            errorMessage={loadError}
             onRetry={() => void bootstrapClient()}
-            theme={theme}
-            onToggleTheme={toggleTheme}
           />
         )}
 
@@ -767,7 +765,6 @@ export default function App() {
             onSkip={skipGate}
             verifying={verifying}
             theme={theme}
-            onToggleTheme={toggleTheme}
           />
         )}
 
@@ -777,8 +774,6 @@ export default function App() {
             setSubdomainInput={setSubdomainInput}
             onSubmit={handleSubdomainSubmit}
             isBusy={isBusy}
-            theme={theme}
-            onToggleTheme={toggleTheme}
           />
         )}
 
@@ -818,7 +813,7 @@ export default function App() {
                 folderShares={folderShares}
                 portListening={portListening}
                 onNewTunnel={() => setShowNewTunnel(true)}
-                gauthEnabled={gauthEnabled}
+                gauthEnabled={gauthEnabled && Boolean(session.ownerEmail)}
                 onAuthToggle={() => void handleAuthToggle()}
                 tunnelNames={tunnelNames}
                 onRenameTunnel={onRenameTunnel}
@@ -857,6 +852,7 @@ export default function App() {
                 onVerify={() => void startGoogleVerify()}
                 verifying={verifying}
                 gauthEnabled={gauthEnabled}
+                onSignOut={() => void handleLogout()}
               />
             )}
           </>

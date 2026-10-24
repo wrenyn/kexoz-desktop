@@ -7,10 +7,10 @@ type Props = {
   requestCount: number
   ownerEmail: string
   onLogin: () => void
-  onLogout: () => void
+  verifying: boolean
 }
 
-export default function Sidebar({ activePage, onNavigate, requestCount, ownerEmail, onLogin, onLogout }: Props) {
+export default function Sidebar({ activePage, onNavigate, requestCount, ownerEmail, onLogin, verifying }: Props) {
   return (
     <aside className="ps-sidebar animate-slide-left">
       <div className="ps-sidebar-brand">
@@ -44,14 +44,13 @@ export default function Sidebar({ activePage, onNavigate, requestCount, ownerEma
             <div className="ps-account-avatar" aria-hidden="true">{ownerEmail.charAt(0)}</div>
             <div className="ps-account-info">
               <div className="ps-account-email" title={ownerEmail}>{ownerEmail}</div>
-              <button type="button" className="ps-account-link" onClick={onLogout}>Sign out</button>
             </div>
           </>
         ) : (
           <div className="ps-account-guest">
             <div className="ps-account-email">Guest</div>
-            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onLogin}>
-              Sign in with Google
+            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onLogin} disabled={verifying}>
+              {verifying ? 'Check your browser…' : 'Sign in with Google'}
             </button>
           </div>
         )}

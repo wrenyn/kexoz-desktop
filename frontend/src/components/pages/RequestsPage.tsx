@@ -10,13 +10,12 @@ type Props = {
   publicUrl: string
 }
 
-type DetailTab = 'headers' | 'body' | 'response' | 'timing'
+type DetailTab = 'headers' | 'body' | 'response'
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'response', label: 'Response' },
-  { id: 'timing', label: 'Timing' },
 ]
 
 function methodClass(method: string) {
@@ -37,10 +36,12 @@ function formatTime(iso: string) {
 
 const SENSITIVE_HEADERS = /authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token/i
 
+function escapeHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function syntaxHighlightJSON(json: string) {
-  let str = json
-  str = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return str.replace(/(("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?))/g, (match) => {
+  return escapeHtml(json).replace(/(("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?))/g, (match) => {
     let cls = 'var(--blue)'
     if (/^"/.test(match)) {
       if (/:$/.test(match)) { cls = 'var(--text)' }
@@ -56,7 +57,7 @@ function syntaxHighlightJSON(json: string) {
 
 function formatBody(body: string | undefined) {
   if (!body) return ''
-  try { return syntaxHighlightJSON(JSON.stringify(JSON.parse(body), null, 2)) } catch { return body }
+  try { return syntaxHighlightJSON(JSON.stringify(JSON.parse(body), null, 2)) } catch { return escapeHtml(body) }
 }
 
 function redactHeaders(headers: Record<string, string> | undefined, showSensitive: boolean) {
@@ -67,10 +68,12 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-function curlCommand(entry: RequestLogEntry) {
-  const headers = Object.entries(entry.headers ?? {}).map(([key, value]) => ` -H ${shellQuote(`${key}: ${value}`)}`).join('')
+function curlCommand(entry: RequestLogEntry, base: string) {
+  const headers = Object.entries(entry.headers ?? {})
+    .filter(([key]) => !['host', 'x-forwarded-host'].includes(key.toLowerCase()))
+    .map(([key, value]) => ` -H ${shellQuote(`${key}: ${value}`)}`).join('')
   const body = entry.body ? ` --data-raw ${shellQuote(entry.body)}` : ''
-  return `curl -X ${entry.method}${headers}${body} ${shellQuote(entry.path)}`
+  return `curl -X ${entry.method}${headers}${body} ${shellQuote(base.replace(/\/$/, '') + entry.path)}`
 }
 
 function HeaderList({ headers, showSensitive, empty }: { headers: Record<string, string> | undefined; showSensitive: boolean; empty: string }) {
@@ -118,19 +121,26 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     document.body.style.cursor = 'col-resize'
   }
 
+  // Replay goes back to the share the request arrived on, not whichever share is selected.
+  const replayBase = (entry: RequestLogEntry | null) => {
+    const host = Object.entries(entry?.headers ?? {}).find(([key]) => ['x-forwarded-host', 'host'].includes(key.toLowerCase()))?.[1]
+    return host ? `https://${host}` : publicUrl
+  }
+
   const replayRequest = async () => {
-    if (!selected || !publicUrl) return
+    const base = replayBase(selected)
+    if (!selected || !base) return
     setReplaying(true)
     setReplayResult(null)
     setOriginalForReplay({ status: selected.status ?? null, durationMs: selected.durationMs ?? null })
     const replayStart = Date.now()
     try {
-      const url = publicUrl.replace(/\/$/, '') + selected.path
+      const url = base.replace(/\/$/, '') + selected.path
       const init: RequestInit = {
         method: selected.method,
         headers: Object.fromEntries(
           Object.entries(selected.headers ?? {}).filter(([k]) =>
-            !['host', 'content-length'].includes(k.toLowerCase())
+            !['host', 'content-length', 'x-forwarded-host'].includes(k.toLowerCase())
           )
         ),
       }
@@ -156,7 +166,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
   const copyCurl = async () => {
     if (!selected) return
-    await navigator.clipboard.writeText(curlCommand(selected))
+    await navigator.clipboard.writeText(curlCommand(selected, replayBase(selected)))
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1500)
   }
@@ -166,17 +176,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     await navigator.clipboard.writeText(publicUrl).catch(() => {})
     setLinkCopied(true)
     window.setTimeout(() => setLinkCopied(false), 1500)
-  }
-
-  const exportCurl = () => {
-    if (!selected) return
-    const blob = new Blob([`${curlCommand(selected)}\n`], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `kexoz-${selected.id || 'request'}.sh`
-    link.click()
-    URL.revokeObjectURL(url)
   }
 
   const hasRequests = requestLog.length > 0
@@ -303,23 +302,21 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           {selected.status ?? 'Error'}
                         </span>
                         {selected.durationMs != null && (
-                          <span className="ps-detail-duration">{selected.durationMs} ms</span>
+                          <span className="ps-detail-duration" title="Time your app took to answer">{selected.durationMs} ms</span>
                         )}
+                        <span className="ps-detail-duration">{formatTime(selected.timestamp)}</span>
                       </div>
                       <div className="ps-detail-actions">
                         <button
                           className="ps-btn ps-btn-secondary ps-btn-sm"
                           onClick={() => void replayRequest()}
-                          disabled={replaying || !publicUrl}
-                          title={publicUrl ? 'Send this request again' : 'No active link'}
+                          disabled={replaying || !replayBase(selected)}
+                          title="Send this request to your link again"
                         >
-                          {replaying ? 'Replaying…' : 'Replay'}
+                          {replaying ? 'Sending…' : 'Send again'}
                         </button>
                         <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copyCurl()}>
                           {copied ? 'Copied' : 'Copy as curl'}
-                        </button>
-                        <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={exportCurl}>
-                          Save as .sh
                         </button>
                         {replayResult && originalForReplay && (
                           <span className="ps-replay-diff">
@@ -350,21 +347,10 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
                     <div className="ps-detail-body animate-fade-in">
                       {activeTab === 'headers' && (
-                        <>
-                          <div>
-                            <div className="ps-detail-label">General</div>
-                            <div className="ps-code">
-                              <div><span style={{ color: 'var(--text-muted)' }}>Path:</span> {selected.path}</div>
-                              <div><span style={{ color: 'var(--text-muted)' }}>Method:</span> {selected.method}</div>
-                              <div><span style={{ color: 'var(--text-muted)' }}>Status:</span> {selected.status ?? 'Error'}</div>
-                              <div><span style={{ color: 'var(--text-muted)' }}>Time:</span> {formatTime(selected.timestamp)}</div>
-                            </div>
-                          </div>
-                          <div>
-                            <div className="ps-detail-label">Request headers</div>
-                            <HeaderList headers={selected.headers} showSensitive={showSensitive} empty="No headers recorded" />
-                          </div>
-                        </>
+                        <div>
+                          <div className="ps-detail-label">Request headers</div>
+                          <HeaderList headers={selected.headers} showSensitive={showSensitive} empty="No headers recorded" />
+                        </div>
                       )}
                       {activeTab === 'body' && (
                         <div>
@@ -388,26 +374,12 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           </div>
                         </>
                       )}
-                      {activeTab === 'timing' && (
-                        <div>
-                          <div className="ps-detail-label">Timing</div>
-                          <div className="ps-code">
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Round trip:</span>{' '}
-                              {selected.durationMs != null ? `${selected.durationMs} ms` : 'Not recorded'}
-                            </div>
-                            <div style={{ color: 'var(--text-soft)', marginTop: 8 }}>
-                              Time from Kexoz receiving the request to your app answering it.
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </>
                 ) : (
                   <div className="ps-empty" style={{ flex: 1 }}>
                     <span className="ps-empty-title">Select a request</span>
-                    <span className="ps-empty-sub">Pick one from the list to see its headers, body and timing.</span>
+                    <span className="ps-empty-sub">Pick one from the list to see its headers, body and response.</span>
                   </div>
                 )}
               </div>

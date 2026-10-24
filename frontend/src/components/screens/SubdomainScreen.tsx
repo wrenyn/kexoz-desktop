@@ -1,21 +1,16 @@
-import { type FormEvent } from 'react'
-import { ROOT_DOMAIN } from '../../lib/api'
-import ThemeToggle from '../ui/ThemeToggle'
+import { useEffect, useState, type FormEvent } from 'react'
+import { ROOT_DOMAIN, checkSubdomainAvailability } from '../../lib/api'
 import Logo from '../ui/Logo'
-import { useState, useEffect } from 'react'
-import { checkSubdomainAvailability } from '../../lib/api'
 
 type SubdomainScreenProps = {
   subdomainInput: string
   setSubdomainInput: (v: string) => void
   onSubmit: (e: FormEvent<HTMLFormElement>) => void
   isBusy: boolean
-  theme: 'light' | 'dark'
-  onToggleTheme: () => void
 }
 
 export default function SubdomainScreen({
-  subdomainInput, setSubdomainInput, onSubmit, isBusy, theme, onToggleTheme
+  subdomainInput, setSubdomainInput, onSubmit, isBusy
 }: SubdomainScreenProps) {
   const [isChecking, setIsChecking] = useState(false)
   const [availability, setAvailability] = useState<'idle' | 'available' | 'taken' | 'reserved'>('idle')
@@ -46,8 +41,8 @@ export default function SubdomainScreen({
     const status =
       isChecking ? { text: 'Checking…', color: 'var(--text-soft)' } :
       availability === 'available' ? { text: 'Available', color: 'var(--green)' } :
-      availability === 'taken' ? { text: 'Already taken', color: 'var(--red)' } :
-      availability === 'reserved' ? { text: 'Reserved name', color: 'var(--red)' } :
+      availability === 'taken' ? { text: 'Taken', color: 'var(--red)' } :
+      availability === 'reserved' ? { text: 'Not available', color: 'var(--red)' } :
       null
     if (!status) return null
     return <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: status.color }}>{status.text}</span>
@@ -70,26 +65,23 @@ export default function SubdomainScreen({
           </div>
           <div className="ps-brand-name">Kexoz</div>
         </div>
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} compact />
       </div>
 
       {/* Body */}
       <div className="ps-onboard-body">
         <div className="ps-onboard-card animate-gate-card" style={{ maxWidth: 460 }}>
 
-          {/* Title */}
           <h1 className="animate-gate-line-2" style={{ marginBottom: 6 }}>
-            Choose your public URL
+            Pick your first address
           </h1>
           <p className="ps-onboard-text animate-gate-line-2" style={{ marginBottom: 20 }}>
-            Your permanent address. It can&apos;t be changed later.
+            People open your shares here. You can add more addresses later.
           </p>
 
-          {/* Form */}
           <form className="ps-onboard-form animate-gate-line-4" onSubmit={onSubmit}>
             <div className="ps-input-wrap">
               <label className="ps-label" htmlFor="subdomain" style={{ display: 'flex', alignItems: 'center' }}>
-                Subdomain
+                Address
                 <AvailabilityBadge />
               </label>
               <div
@@ -115,7 +107,7 @@ export default function SubdomainScreen({
               </div>
               {subdomainInput.length > 0 && subdomainInput.length < 3 && (
                 <p style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: 2 }}>
-                  At least 3 characters required
+                  Use at least 3 characters
                 </p>
               )}
             </div>
@@ -126,16 +118,9 @@ export default function SubdomainScreen({
               disabled={!canSubmit}
               style={{ borderRadius: 10, transition: 'all 0.2s ease' }}
             >
-              {isBusy ? 'Claiming…' : 'Claim subdomain'}
+              {isBusy ? 'Saving…' : 'Continue'}
             </button>
           </form>
-
-          {/* Hint text */}
-          <p className="animate-gate-line-5" style={{ fontSize: 11.5, color: 'var(--text-soft)', marginTop: 16, lineHeight: 1.5, textAlign: 'center' }}>
-            Your tunnel will be live at <span style={{ fontFamily: 'var(--mono-font)', color: 'var(--text-muted)' }}>
-              {subdomainInput ? `${subdomainInput}.${ROOT_DOMAIN}` : `<subdomain>.${ROOT_DOMAIN}`}
-            </span>
-          </p>
         </div>
       </div>
     </div>

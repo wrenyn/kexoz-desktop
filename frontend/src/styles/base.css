@@ -209,12 +209,6 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .ps-account-info { min-width: 0; flex: 1; }
 .ps-account-email { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ps-account-link {
-  border: none; background: none; padding: 0;
-  font: inherit; font-size: 12px; color: var(--text-soft);
-  cursor: pointer;
-}
-.ps-account-link:hover { color: var(--text); text-decoration: underline; }
 .ps-account-guest { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .ps-account-guest .ps-account-email { color: var(--text-soft); }
 
@@ -858,24 +852,86 @@ a.ps-btn { text-decoration: none; }
   background: var(--bg-app);
 }
 
-.ps-splash-theme {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  border: 1px solid var(--border);
+.ps-gate-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 20px;
   background: var(--bg-surface);
-  color: var(--text-muted);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
 }
-.ps-splash-theme:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-bright); }
+.ps-gate-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.03em;
+  text-align: center;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+.ps-gate-text {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-align: center;
+  margin-bottom: 24px;
+  max-width: 290px;
+}
+.ps-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.ps-gate-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 20px;
+  font: 600 13.5px var(--sans-font);
+  letter-spacing: -0.01em;
+  border-radius: 11px;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ps-gate-google:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-focus); }
+.ps-gate-google:disabled { cursor: default; color: var(--text-muted); }
+.ps-gate-google:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.ps-gate-guest {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 20px;
+  font-size: 13px;
+  border-radius: 11px;
+  margin-top: 10px;
+}
+.ps-gate-note {
+  font-size: 11.5px;
+  color: var(--text-soft);
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
+}
+.ps-gate-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid var(--border-bright);
+  border-top-color: var(--text-accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
 
 .ps-splash-inner {
   display: flex;
@@ -1268,8 +1324,6 @@ a.ps-btn { text-decoration: none; }
 .ps-saved-tunnel-wrap:hover { background: var(--bg-hover); }
 .ps-saved-tunnel-wrap.selected { border-color: var(--border-bright); background: var(--bg-input); }
 .ps-saved-tunnel { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 12px; cursor: pointer; }
-.ps-saved-tunnel-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--text-soft); }
-.ps-saved-tunnel-dot.active { background: var(--green); box-shadow: 0 0 0 3px var(--green-dim); }
 .ps-saved-tunnel-main { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
 .ps-saved-tunnel-main strong { overflow: hidden; color: var(--text-strong); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .ps-saved-tunnel-main small { color: var(--text-soft); font-family: var(--mono-font); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1526,6 +1580,10 @@ a.ps-btn { text-decoration: none; }
 .ps-tunnel-rename-input { font-size: 13px; font-weight: 600; color: var(--text-strong); background: var(--bg-input); border: 1px solid var(--border-focus); border-radius: var(--radius-sm); padding: 2px 6px; outline: none; width: 160px; font-family: var(--sans-font); }
 .ps-rename-btn { background: none; border: none; cursor: pointer; color: var(--text-soft); padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; font: inherit; font-size: 11px; }
 .ps-rename-btn:hover { color: var(--text); background: var(--bg-elevated); }
+.ps-saved-tunnel .ps-rename-btn { opacity: 0; transition: opacity 0.12s ease; }
+.ps-saved-tunnel:hover .ps-rename-btn,
+.ps-saved-tunnel.selected .ps-rename-btn,
+.ps-rename-btn:focus-visible { opacity: 1; }
 
 /* ─── KEYBOARD SHORTCUTS POPOVER ────────────────────────────── */
 .ps-shortcuts-popover {

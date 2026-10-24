@@ -126,7 +126,7 @@ export default function TunnelsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Shares</h1>
-          <p className="ps-page-subtitle">Ports, terminals and folders you've shared from this device</p>
+          <p className="ps-page-subtitle">Ports, terminals and folders you share</p>
         </div>
         <div className="ps-header-actions">
           <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewTunnel}>
@@ -171,7 +171,6 @@ export default function TunnelsPage({
                         }
                       }}
                     >
-                      <span className={`ps-saved-tunnel-dot ${status === 'active' ? 'active' : ''}`} />
                       <div className="ps-saved-tunnel-main">
                         <TunnelNameRow tunnel={tunnel} tunnelNames={tunnelNames} onRenameTunnel={onRenameTunnel} />
                         <small>{shareDetail(tunnel, folderShares[tunnel.id])}</small>
@@ -195,14 +194,14 @@ export default function TunnelsPage({
                         >
                           Open
                         </a>
-                        {status !== 'expired' && (
+                        {tunnel.paused && status !== 'expired' && (
                           <button
                             className="ps-btn ps-btn-secondary ps-btn-sm"
-                            onClick={event => { event.stopPropagation(); onPauseTunnel(tunnel, !tunnel.paused) }}
+                            onClick={event => { event.stopPropagation(); onPauseTunnel(tunnel, false) }}
                             disabled={isBusy}
-                            title={tunnel.paused ? 'Let visitors in again' : 'Keep the link but refuse visitors'}
+                            title="Let visitors in again"
                           >
-                            {tunnel.paused ? 'Resume' : 'Pause'}
+                            Resume
                           </button>
                         )}
                         {tunnel.active ? (
@@ -255,7 +254,7 @@ export default function TunnelsPage({
                           </button>
                           {portListening !== null && (
                             <span className={`ps-port-status ${portListening ? 'listening' : 'offline'}`}>
-                              {portListening ? 'Listening' : 'Not listening'}
+                              {portListening ? 'App is running' : 'Nothing is running on this port'}
                             </span>
                           )}
                           {type === 'http' && (
