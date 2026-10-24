@@ -61,4 +61,4 @@ Point the app at a different gateway (for example a local one) with `VITE_KEXOZ_
 
 ## License
 
-[MIT](./LICENSE) © [Wrenyn](https://wrenyn.com)
+Proprietary. © [Wrenyn](https://wrenyn.com), all rights reserved; see [LICENSE](./LICENSE)
