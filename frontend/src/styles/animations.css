@@ -1,0 +1,123 @@
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50%       { box-shadow: 0 0 0 4px transparent; opacity: 0.7; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progress-bar {
+  from { width: 0%; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes ping {
+  0%   { transform: scale(1); opacity: 1; }
+  75%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes request-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Gate/Onboard stagger */
+@keyframes gateCardIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes gateLine {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50%       { transform: scale(1.4); opacity: 1; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.12; transform: translate(-50%, -50%) scale(1); }
+  50%       { opacity: 0.28; transform: translate(-50%, -50%) scale(1.3); }
+}
+
+@keyframes spinnerFade {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in     { animation: fadeIn 0.2s var(--ease-out) both; }
+.animate-fade-up     { animation: fadeUp 0.3s var(--ease-out) both; }
+.animate-fade-down   { animation: fadeDown 0.2s var(--ease-out) both; }
+.animate-slide-left  { animation: slideInLeft 0.3s var(--ease-out) both; }
+.animate-slide-right { animation: slideInRight 0.3s var(--ease-out) both; }
+.animate-scale-in    { animation: scaleIn 0.25s var(--ease-spring) both; }
+.animate-modal-in    { animation: modalIn 0.3s var(--ease-spring) both; }
+.animate-spin        { animation: spin 0.8s linear infinite; }
+
+.animate-gate-card   { animation: gateCardIn 0.5s var(--ease-spring) both; }
+.animate-gate-line-1 { animation: gateLine 0.4s var(--ease-out) 0.1s both; }
+.animate-gate-line-2 { animation: gateLine 0.4s var(--ease-out) 0.2s both; }
+.animate-gate-line-3 { animation: gateLine 0.4s var(--ease-out) 0.3s both; }
+.animate-gate-line-4 { animation: gateLine 0.4s var(--ease-out) 0.4s both; }
+.animate-gate-line-5 { animation: gateLine 0.4s var(--ease-out) 0.5s both; }
+
+.delay-50  { animation-delay: 50ms; }
+.delay-100 { animation-delay: 100ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+
+/* Respect the OS "reduce motion" setting: the UI stays fully usable but the
+   decorative animation and transition work is skipped. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
