@@ -124,6 +124,10 @@ export const ensureClientIdentity = async (existingId: string | null): Promise<C
   }
 }
 
+/** Account page on the website; `upgrade` opens checkout for that plan. */
+export const upgradeUrl = (clientId: string, planId: 'pro' | 'pro_plus'): string =>
+  `https://${ROOT_DOMAIN}/account?clientId=${encodeURIComponent(clientId)}&upgrade=${planId}`
+
 export const tierOf = (session: Pick<ClientSession, 'plan' | 'ownerEmail'>): Tier => {
   if (session.plan === 'pro_plus') return 'pro_plus'
   if (session.plan === 'pro') return 'pro'
@@ -238,10 +242,4 @@ export const setTunnelPaused = async (clientId: string, tunnelId: string, paused
 
 export const deleteTunnel = async (clientId: string, tunnelId: string): Promise<void> => {
   await axios.delete(`${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}`, { params: { clientId } })
-}
-
-export const createCheckoutSession = async (clientId: string, planId = 'pro'): Promise<string> => {
-  const { data } = await axios.post<{ url: string }>(`${API_BASE_URL}/client/billing/checkout`, { clientId, planId })
-  if (!data.url) throw new Error('The billing service did not return a checkout URL.')
-  return data.url
 }

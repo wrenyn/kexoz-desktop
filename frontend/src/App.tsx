@@ -12,7 +12,7 @@ import {
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, updateClientAuth, fetchClientStats,
-  googleLinkLoginUrl, fetchLinkStatus, tierOf, createCheckoutSession, updateClientRoutes,
+  googleLinkLoginUrl, fetchLinkStatus, tierOf, updateClientRoutes,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused
 } from './lib/api'
 import type { FolderShareConfig, NewShareRequest } from './lib/shares'
@@ -35,7 +35,6 @@ import TunnelsPage from './components/pages/TunnelsPage'
 import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
-import UpgradeModal from './components/modals/UpgradeModal'
 import NewShareModal from './components/modals/NewShareModal'
 
 // One shared toast configuration: the app renders a <Toaster> in both the gate
@@ -90,7 +89,6 @@ export default function App() {
   const [gauthEnabled, setGauthEnabled] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [showNewTunnel, setShowNewTunnel] = useState(false)
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [persistentTunnels, setPersistentTunnels] = useState<PersistentTunnel[]>([])
   const [selectedTunnelId, setSelectedTunnelId] = useState<string | null>(null)
   const [routeRules, setRouteRules] = useState<Array<{ path: string; port: number }>>(() => {
@@ -682,33 +680,9 @@ export default function App() {
     window.location.reload()
   }
 
-  const handleUpgrade = async (planId?: string) => {
-    if (!session) return
-    if (!planId) {
-      // Show plan picker modal first
-      setShowUpgradeModal(true)
-      return
-    }
-    try {
-      const checkoutUrl = await createCheckoutSession(session.id, planId)
-      window.open(checkoutUrl, '_blank', 'noopener,noreferrer')
-      setShowUpgradeModal(false)
-    } catch (err) {
-      toast.error(extractError(err))
-    }
-  }
-
   return (
     <>
       <Toaster position="bottom-right" toastOptions={TOAST_OPTIONS} />
-      {showUpgradeModal && session && (
-        <UpgradeModal
-          currentPlan={session.plan}
-          clientId={session.id}
-          onClose={() => setShowUpgradeModal(false)}
-          onCheckout={(planId) => handleUpgrade(planId)}
-        />
-      )}
       {showNewTunnel && session && (
         <NewShareModal
           onClose={() => setShowNewTunnel(false)}
@@ -819,7 +793,6 @@ export default function App() {
                 setDomainInput={setDomainInput}
                 onDomainSubmit={handleDomainSubmit}
                 isBusy={isBusy}
-                onUpgrade={() => void handleUpgrade()}
               />
             )}
 
@@ -829,7 +802,6 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 session={session}
                 onVerify={() => void startGoogleVerify()}
-                onUpgrade={() => void handleUpgrade()}
                 verifying={verifying}
                 gauthEnabled={gauthEnabled}
               />

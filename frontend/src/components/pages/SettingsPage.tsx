@@ -1,12 +1,10 @@
-import { tierOf, type ClientSession } from '../../lib/api'
-import { ROOT_DOMAIN } from '../../lib/api'
+import { ROOT_DOMAIN, tierOf, upgradeUrl, type ClientSession } from '../../lib/api'
 
 type Props = {
   theme: 'light' | 'dark'
   onToggleTheme: () => void
   session: ClientSession
   onVerify: () => void
-  onUpgrade: () => void
   verifying: boolean
   gauthEnabled: boolean
 }
@@ -20,7 +18,7 @@ const TIER_LABEL: Record<string, string> = {
 
 export default function SettingsPage({
   theme, onToggleTheme,
-  session, onVerify, onUpgrade,
+  session, onVerify,
   verifying, gauthEnabled,
 }: Props) {
   const tier = tierOf(session)
@@ -65,9 +63,14 @@ export default function SettingsPage({
                   {TIER_LABEL[tier] ?? session.plan}
                 </span>
                 {tier !== 'pro_plus' && (
-                  <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onUpgrade}>
-                    See plans
-                  </button>
+                  <a
+                    className="ps-btn ps-btn-primary ps-btn-sm"
+                    href={upgradeUrl(session.id, tier === 'pro' ? 'pro_plus' : 'pro')}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Upgrade plan
+                  </a>
                 )}
               </div>
             </div>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { ClientSession } from '../../lib/api'
-import { ROOT_DOMAIN, tierOf } from '../../lib/api'
+import { ROOT_DOMAIN, tierOf, upgradeUrl } from '../../lib/api'
 
 type Props = {
   session: ClientSession | null
@@ -8,7 +8,6 @@ type Props = {
   setDomainInput: (v: string) => void
   onDomainSubmit: (e: FormEvent<HTMLFormElement>) => void
   isBusy: boolean
-  onUpgrade: () => void
 }
 
 type DomainEntry = {
@@ -25,7 +24,7 @@ const statusBadge = {
   error:   'ps-badge-red',
 }
 
-export default function DomainsPage({ session, domainInput, setDomainInput, onDomainSubmit, isBusy, onUpgrade }: Props) {
+export default function DomainsPage({ session, domainInput, setDomainInput, onDomainSubmit, isBusy }: Props) {
   const [showAddCustom, setShowAddCustom] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const tier = session ? tierOf(session) : 'anonymous'
@@ -127,9 +126,16 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
               <div className="ps-domains-section-title">Use your own domain</div>
               <p className="ps-domains-section-text">Custom domains are part of Pro.</p>
             </div>
-            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onUpgrade}>
-              See plans
-            </button>
+            {session && (
+              <a
+                className="ps-btn ps-btn-primary ps-btn-sm"
+                href={upgradeUrl(session.id, 'pro')}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Upgrade plan
+              </a>
+            )}
           </div>
         )}
       </div>
