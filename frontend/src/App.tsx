@@ -12,7 +12,7 @@ import {
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, updateClientAuth, fetchClientStats,
-  googleLinkLoginUrl, fetchLinkStatus, createCheckoutSession, updateClientRoutes,
+  googleLinkLoginUrl, fetchLinkStatus, tierOf, createCheckoutSession, updateClientRoutes,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused
 } from './lib/api'
 import type { FolderShareConfig, NewShareRequest } from './lib/shares'
@@ -36,6 +36,7 @@ import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
 import UpgradeModal from './components/modals/UpgradeModal'
+import NewShareModal from './components/modals/NewShareModal'
 
 // One shared toast configuration: the app renders a <Toaster> in both the gate
 // and the dashboard branches, so they must look and behave identically.
@@ -85,12 +86,9 @@ export default function App() {
 
   const [statusMessage, setStatusMessage] = useState('Starting secure tunnel client...')
   const [isBusy, setIsBusy] = useState(false)
-  const [copyFeedback, setCopyFeedback] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [connState, setConnState] = useState<ConnectionState>('idle')
   const [gauthEnabled, setGauthEnabled] = useState(false)
   const [verifying, setVerifying] = useState(false)
-  const [connectedAt, setConnectedAt] = useState<number | null>(null)
-  const [now, setNow] = useState(() => Date.now())
   const [showNewTunnel, setShowNewTunnel] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [persistentTunnels, setPersistentTunnels] = useState<PersistentTunnel[]>([])
@@ -171,8 +169,6 @@ export default function App() {
       portRef,
       onStateChange: (state, message) => {
         setConnState(state)
-        if (state === 'connected') setConnectedAt(Date.now())
-        if (state === 'disconnected') setConnectedAt(null)
         if (message) setStatusMessage(message)
       },
       onLogEntry: addLogEntry,
@@ -215,10 +211,6 @@ export default function App() {
     if (!session?.subdomain) return ''
     return `https://${session.subdomain}.${ROOT_DOMAIN}`
   }, [session])
-
-  const uptimeSeconds = connectedAt && connState === 'connected'
-    ? Math.max(0, Math.floor((now - connectedAt) / 1000))
-    : 0
 
   useEffect(() => {
     routesRef.current = routeRules
@@ -289,12 +281,6 @@ export default function App() {
     const id = window.setInterval(() => void refreshRoutePorts(), 5000)
     return () => window.clearInterval(id)
   }, [routeRules, step])
-
-  useEffect(() => {
-    if (connState !== 'connected') return
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [connState])
 
   useEffect(() => {
     if (!session?.id || step !== 'dashboard') return
@@ -614,7 +600,6 @@ export default function App() {
       if (tunnel.id === selectedTunnelId) {
         tunnelClose.current = null
         setConnState('idle')
-        setConnectedAt(null)
       }
       toast.success(`${tunnel.subdomain}.${ROOT_DOMAIN} is stopped.`)
     } catch (err) {
@@ -692,18 +677,6 @@ export default function App() {
     }
   }
 
-  const handleCopyUrl = async () => {
-    if (!publicUrl) return
-    try {
-      await navigator.clipboard.writeText(publicUrl)
-      setCopyFeedback('copied')
-      toast.success('URL copied')
-    } catch {
-      setCopyFeedback('failed')
-    }
-    window.setTimeout(() => setCopyFeedback('idle'), 1800)
-  }
-
   const handleLogout = () => {
     clearClientId()
     window.location.reload()
@@ -734,6 +707,13 @@ export default function App() {
           clientId={session.id}
           onClose={() => setShowUpgradeModal(false)}
           onCheckout={(planId) => handleUpgrade(planId)}
+        />
+      )}
+      {showNewTunnel && session && (
+        <NewShareModal
+          onClose={() => setShowNewTunnel(false)}
+          tier={tierOf(session)}
+          onSubmit={createShare}
         />
       )}
       <AppShell>
@@ -784,28 +764,15 @@ export default function App() {
             {activePage === 'dashboard' && (
               <DashboardPage
                 session={session}
-                connState={connState}
-                portInput={portInput}
-                setPortInput={setPortInput}
-                onPortSubmit={handlePortSubmit}
-                gauthEnabled={gauthEnabled}
-                onAuthToggle={handleAuthToggle}
-                isBusy={isBusy}
+                tunnels={persistentTunnels}
                 totalRequests={totalRequests}
-                onCopyUrl={handleCopyUrl}
-                copyFeedback={copyFeedback}
                 requestLog={requestLog}
                 bytesIn={bytesIn}
                 bytesOut={bytesOut}
                 dailyUsage={dailyUsage}
-                portListening={portListening}
-                uptimeSeconds={uptimeSeconds}
-                showNewTunnel={showNewTunnel}
-                onOpenNewTunnel={() => setShowNewTunnel(true)}
-                onCloseNewTunnel={() => setShowNewTunnel(false)}
-                onCreateTunnel={createShare}
-                tunnelType={persistentTunnels.find(t => t.id === selectedTunnelId)?.tunnelType}
-                folderPath={selectedTunnelId ? folderShares[selectedTunnelId]?.root : undefined}
+                onNewShare={() => setShowNewTunnel(true)}
+                onViewRequests={() => setActivePage('requests')}
+                onViewShares={() => setActivePage('tunnels')}
               />
             )}
 
@@ -827,10 +794,9 @@ export default function App() {
                 onPauseTunnel={(tunnel, paused) => void setPersistentTunnelPaused(tunnel, paused)}
                 folderShares={folderShares}
                 portListening={portListening}
-                onNewTunnel={() => {
-                  setActivePage('dashboard')
-                  setShowNewTunnel(true)
-                }}
+                onNewTunnel={() => setShowNewTunnel(true)}
+                gauthEnabled={gauthEnabled}
+                onAuthToggle={() => void handleAuthToggle()}
                 tunnelNames={tunnelNames}
                 onRenameTunnel={onRenameTunnel}
               />

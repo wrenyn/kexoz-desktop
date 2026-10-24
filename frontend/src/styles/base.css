@@ -1272,6 +1272,7 @@ a.ps-btn { text-decoration: none; }
 .ps-saved-tunnel-port { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ps-saved-tunnel-port .ps-label { margin: 0; }
 .ps-saved-tunnel-port .ps-port-status { margin-left: 0; }
+.ps-saved-tunnel-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .ps-usage-history { margin-top: 14px; padding: 17px 20px; }
 .ps-usage-history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 12px; }
 .ps-usage-history-heading { margin-bottom: 6px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
@@ -1509,6 +1510,35 @@ a.ps-btn { text-decoration: none; }
   font-size: 12px;
   color: var(--text-soft);
   font-weight: 500;
+}
+.ps-stat-card-sub { font-size: 11.5px; color: var(--text-soft); }
+
+/* ─── DASHBOARD OVERVIEW ─────────────────────────────────────── */
+.ps-overview-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ps-overview-stats .ps-stat-card { padding: 16px 18px; gap: 6px; background: var(--bg-surface); }
+.ps-overview-stats .ps-stat-card-value { font-size: 24px; }
+.ps-stat-card-link { font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s ease; }
+.ps-stat-card-link:hover { border-color: var(--border-bright); }
+.ps-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ps-overview-card { padding: 18px 20px; }
+.ps-overview-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.ps-overview-card-title { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.ps-overview-card-sub { font-size: 12.5px; color: var(--text-soft); margin-top: 3px; }
+.ps-overview-empty { padding: 18px 0 6px; font-size: 12.5px; color: var(--text-soft); }
+.ps-status-rows { display: flex; flex-direction: column; gap: 10px; }
+.ps-status-row { display: grid; grid-template-columns: 130px 1fr 40px; align-items: center; gap: 12px; }
+.ps-status-row-label { font-size: 12.5px; color: var(--text-muted); }
+.ps-status-row-bar { height: 6px; border-radius: 99px; background: var(--bg-elevated); overflow: hidden; }
+.ps-status-row-bar > div { height: 100%; border-radius: 99px; }
+.ps-status-row-count { font-size: 12.5px; font-family: var(--mono-font); color: var(--text); text-align: right; }
+.ps-top-paths { display: flex; flex-direction: column; }
+.ps-top-path { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ps-top-path:last-child { border-bottom: none; }
+.ps-top-path-name { font-family: var(--mono-font); font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-top-path-count { font-family: var(--mono-font); font-size: 12.5px; color: var(--text-soft); }
+@media (max-width: 900px) {
+  .ps-overview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ps-overview-grid { grid-template-columns: 1fr; }
 }
 
 /* ─── QUICK-CONNECT CTA ──────────────────────────────────────── */

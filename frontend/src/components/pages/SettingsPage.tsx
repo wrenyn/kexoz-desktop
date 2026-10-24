@@ -12,10 +12,10 @@ type Props = {
 }
 
 const TIER_LABEL: Record<string, string> = {
-  anonymous: 'Guest • 100 MB',
-  verified:  'Verified • 1 GB free',
-  pro:       'Pro • 5 GB',
-  pro_plus:  'Pro+ • 10 GB',
+  anonymous: 'Guest · 100 MB',
+  verified:  'Free · 1 GB',
+  pro:       'Pro · 5 GB',
+  pro_plus:  'Pro+ · 10 GB',
 }
 
 export default function SettingsPage({
@@ -58,15 +58,15 @@ export default function SettingsPage({
             <div className="ps-settings-row">
               <div className="ps-settings-row-info">
                 <div className="ps-settings-row-label">Plan</div>
-                <div className="ps-settings-row-desc">Current bandwidth tier for this identity</div>
+                <div className="ps-settings-row-desc">Monthly bandwidth for your shares</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="ps-badge ps-badge-gray" style={{ textTransform: 'capitalize' }}>
+                <span className="ps-badge ps-badge-gray">
                   {TIER_LABEL[tier] ?? session.plan}
                 </span>
                 {tier !== 'pro_plus' && (
-                  <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onUpgrade}>
-                    Upgrade
+                  <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onUpgrade}>
+                    See plans
                   </button>
                 )}
               </div>
@@ -77,21 +77,21 @@ export default function SettingsPage({
                 <div className="ps-settings-row-label">Google account</div>
                 <div className="ps-settings-row-desc">
                   {session.ownerEmail
-                    ? `Linked as ${session.ownerEmail}`
-                    : 'Verify to unlock 1 GB free + auth wall'}
+                    ? `Signed in as ${session.ownerEmail}`
+                    : 'Not signed in'}
                 </div>
               </div>
               {session.ownerEmail ? (
-                <span className="ps-badge ps-badge-green">Verified</span>
+                <span className="ps-badge ps-badge-green">Signed in</span>
               ) : !gauthEnabled ? (
                 <span className="ps-badge ps-badge-gray">Unavailable</span>
               ) : (
                 <button
-                  className="ps-btn ps-btn-primary ps-btn-sm"
+                  className="ps-btn ps-btn-secondary ps-btn-sm"
                   onClick={onVerify}
                   disabled={verifying}
                 >
-                  {verifying ? 'Check browser…' : 'Verify'}
+                  {verifying ? 'Check your browser…' : 'Sign in with Google'}
                 </button>
               )}
             </div>
@@ -99,7 +99,7 @@ export default function SettingsPage({
             <div className="ps-settings-row">
               <div className="ps-settings-row-info">
                 <div className="ps-settings-row-label">Web account</div>
-                <div className="ps-settings-row-desc">View plans, usage, invoices, and renewal status</div>
+                <div className="ps-settings-row-desc">Billing, invoices and usage history in your browser</div>
               </div>
               <a
                 className="ps-btn ps-btn-secondary ps-btn-sm"

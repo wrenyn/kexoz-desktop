@@ -24,6 +24,8 @@ type Props = {
   onNewTunnel: () => void
   tunnelNames: Record<string, string>
   onRenameTunnel: (id: string, name: string) => void
+  gauthEnabled: boolean
+  onAuthToggle: () => void
 }
 
 function AccessBadge({ tunnel }: { tunnel: PersistentTunnel }) {
@@ -104,7 +106,7 @@ export default function TunnelsPage({
   portInput, setPortInput, onPortSubmit,
   routeRules, onRouteRulesChange, routePortStatus, portListening, isBusy, onNewTunnel,
   persistentTunnels, selectedTunnelId, onSelectTunnel, onStartTunnel, onStopTunnel, onDeleteTunnel, onPauseTunnel,
-  folderShares, tunnelNames, onRenameTunnel
+  folderShares, tunnelNames, onRenameTunnel, gauthEnabled, onAuthToggle
 }: Props) {
   const [showRoutes, setShowRoutes] = useState(false)
   // Deleting a saved tunnel removes a persistent configuration, so it takes two
@@ -297,6 +299,24 @@ export default function TunnelsPage({
                         </form>
                         {type === 'http' && showRoutes && (
                           <RouteRulesEditor rules={routeRules} onChange={onRouteRulesChange} portStatus={routePortStatus} />
+                        )}
+                        {type === 'http' && gauthEnabled && (
+                          <div className="ps-saved-tunnel-option">
+                            <div>
+                              <div className="ps-settings-row-label">Require Google sign-in</div>
+                              <div className="ps-settings-row-desc">Visitors sign in before they can open this link</div>
+                            </div>
+                            <label className="ps-toggle">
+                              <input type="checkbox" checked={tunnel.requireAuth} onChange={onAuthToggle} disabled={isBusy} aria-label="Require Google sign-in" />
+                              <div className="ps-toggle-track" />
+                            </label>
+                          </div>
+                        )}
+                        {type === 'e2e' && (
+                          <div>
+                            <div className="ps-settings-row-desc" style={{ marginBottom: 6 }}>Run this with the Kexoz CLI for end-to-end encryption</div>
+                            <div className="ps-code">kexoz proxy --port {portInput || tunnel.port} --subdomain {tunnel.subdomain}</div>
+                          </div>
                         )}
                       </div>
                     )}
