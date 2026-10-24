@@ -1,0 +1,163 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            files: |
+              electron/release-assets/Kexoz-windows-x64-setup.exe
+              electron/release-assets/Kexoz-windows-x64.zip
+          - os: windows-latest
+            arch: arm64
+            files: |
+              electron/release-assets/Kexoz-windows-arm64-setup.exe
+              electron/release-assets/Kexoz-windows-arm64.zip
+          - os: macos-latest
+            arch: x64
+            files: |
+              electron/release-assets/Kexoz-macos-x64.zip
+          - os: macos-latest
+            arch: arm64
+            files: |
+              electron/release-assets/Kexoz-macos-arm64.zip
+          - os: ubuntu-latest
+            arch: x64
+            files: |
+              electron/release-assets/kexoz-linux-x64.deb
+              electron/release-assets/kexoz-linux-x64.rpm
+              electron/release-assets/Kexoz-linux-x64.zip
+          - os: ubuntu-latest
+            arch: arm64
+            files: |
+              electron/release-assets/kexoz-linux-arm64.deb
+              electron/release-assets/kexoz-linux-arm64.rpm
+              electron/release-assets/Kexoz-linux-arm64.zip
+    runs-on: ${{ matrix.os }}
+    env:
+      VITE_KEXOZ_API_BASE: https://api.kexoz.dev
+      VITE_KEXOZ_ROOT_DOMAIN: kexoz.dev
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Linux packaging tools
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm zip
+
+      - name: Sync package version from tag
+        working-directory: electron
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "$TAG_VERSION" ]; then
+            npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version
+          fi
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Electron Dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Installers (${{ matrix.arch }})
+        working-directory: electron
+        run: npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Normalize asset names
+        working-directory: electron
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          for f in out/make/zip/*/*/*.zip; do
+            [ -e "$f" ] || continue
+            case "$f" in
+              *win32-x64*)    cp "$f" release-assets/Kexoz-windows-x64.zip ;;
+              *win32-arm64*)  cp "$f" release-assets/Kexoz-windows-arm64.zip ;;
+              *darwin-x64*)   cp "$f" release-assets/Kexoz-macos-x64.zip ;;
+              *darwin-arm64*) cp "$f" release-assets/Kexoz-macos-arm64.zip ;;
+              *linux-x64*)    cp "$f" release-assets/Kexoz-linux-x64.zip ;;
+              *linux-arm64*)  cp "$f" release-assets/Kexoz-linux-arm64.zip ;;
+            esac
+          done
+          for f in out/make/deb/*/*.deb; do
+            [ -e "$f" ] || continue
+            case "$f" in
+              *_amd64.deb) cp "$f" release-assets/kexoz-linux-x64.deb ;;
+              *_arm64.deb) cp "$f" release-assets/kexoz-linux-arm64.deb ;;
+            esac
+          done
+          for f in out/make/rpm/*/*.rpm; do
+            [ -e "$f" ] || continue
+            case "$f" in
+              *x86_64.rpm) cp "$f" release-assets/kexoz-linux-x64.rpm ;;
+              *aarch64.rpm|*arm64.rpm) cp "$f" release-assets/kexoz-linux-arm64.rpm ;;
+            esac
+          done
+          for f in out/make/squirrel.windows/x64/*.exe; do
+            [ -e "$f" ] || continue
+            cp "$f" release-assets/Kexoz-windows-x64-setup.exe
+          done
+          for f in out/make/squirrel.windows/arm64/*.exe; do
+            [ -e "$f" ] || continue
+            cp "$f" release-assets/Kexoz-windows-arm64-setup.exe
+          done
+          ls -la release-assets
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.files }}
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Asset verification ────────────────────────────────────────────────
+  # website/app/download/kexoz-desktop/route.ts maps these exact names onto
+  # the download buttons, so a partial release must fail rather than serve 404s.
+  verify-assets:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm every advertised installer is published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          status=0
+          for name in \
+            Kexoz-windows-x64-setup.exe Kexoz-windows-arm64.zip \
+            Kexoz-macos-x64.zip Kexoz-macos-arm64.zip \
+            Kexoz-linux-x64.zip Kexoz-linux-arm64.zip \
+            kexoz-linux-x64.deb kexoz-linux-x64.rpm \
+            kexoz-linux-arm64.deb kexoz-linux-arm64.rpm; do
+            if ! grep -qx "$name" <<< "$assets"; then
+              echo "::error::missing release asset: $name"
+              status=1
+            fi
+          done
+          exit $status

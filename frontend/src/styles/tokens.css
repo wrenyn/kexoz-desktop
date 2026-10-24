@@ -1,0 +1,169 @@
+/* Kexoz brand palette. Fonts are bundled via @fontsource (imported in main.tsx). */
+:root {
+  --color-graphite:           #202322;
+  --color-graphite-secondary: #343B37;
+  --color-acid-lime:          #C6F36B;
+  --color-background-light:   #E9EDE6;
+  --color-white:              #FFFFFF;
+}
+
+/* ═══════════════════════════════════════════════
+   DARK MODE (default)
+   ═══════════════════════════════════════════════ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --bg-app:        #202322;
+  --bg-sidebar:    #1B1E1D;
+  --bg-surface:    #272B29;
+  --bg-elevated:   #2D322F;
+  --bg-overlay:    rgba(27, 30, 29, 0.88);
+  --bg-input:      #1F2221;
+  --bg-hover:      rgba(233, 237, 230, 0.05);
+  --bg-active:     rgba(233, 237, 230, 0.09);
+
+  /* Borders */
+  --border:        #343B37;
+  --border-bright: #48514C;
+  --border-focus:  rgba(198, 243, 107, 0.6);
+  --border-input:  #3A413D;
+
+  /* Accents */
+  --accent:        #C6F36B;
+  --accent-dim:    rgba(198, 243, 107, 0.12);
+  --accent-border: rgba(198, 243, 107, 0.32);
+  --accent-glow:   rgba(198, 243, 107, 0.18);
+  --accent-hover:  #D3F78A;
+  --text-on-accent:#202322;
+
+  /* Glows & Glass */
+  --glow-primary:  rgba(198, 243, 107, 0.10);
+  --glass-bg:      rgba(39, 43, 41, 0.6);
+  --glass-border:  rgba(233, 237, 230, 0.06);
+
+  /* Status — success follows the lime accent */
+  --green:         #C6F36B;
+  --green-dim:     rgba(198, 243, 107, 0.12);
+  --green-border:  rgba(198, 243, 107, 0.32);
+  --red:           #F87171;
+  --red-dim:       rgba(248, 113, 113, 0.14);
+  --yellow:        #F5B85B;
+  --yellow-dim:    rgba(245, 184, 91, 0.14);
+  --blue:          #7DD3FC;
+  --blue-dim:      rgba(125, 211, 252, 0.14);
+  --cyan:          #7DD3FC;
+  --cyan-dim:      rgba(125, 211, 252, 0.12);
+  /* Share exposure: amber = public, sky = private */
+  --amber:         #F5B85B;
+  --amber-dim:     rgba(245, 184, 91, 0.14);
+  --sky:           #7DD3FC;
+  --sky-dim:       rgba(125, 211, 252, 0.14);
+
+  /* Text */
+  --text:          #E9EDE6;
+  --text-strong:   #FFFFFF;
+  --text-muted:    #A7B0A9;
+  --text-soft:     #7D877F;
+  --text-accent:   #C6F36B;
+
+  /* Shadows */
+  --shadow-sm:     0 1px 3px rgba(0,0,0,0.35);
+  --shadow-md:     0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
+  --shadow-accent: 0 0 0 3px rgba(198, 243, 107, 0.18);
+
+  /* Terminal surfaces stay graphite in both themes */
+  --console-bg:     #1B1E1D;
+  --console-text:   #E9EDE6;
+  --console-muted:  #A7B0A9;
+  --console-border: #343B37;
+}
+
+/* ═══════════════════════════════════════════════
+   LIGHT MODE
+   ═══════════════════════════════════════════════ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Backgrounds */
+  --bg-app:        #E9EDE6;
+  --bg-sidebar:    #F5F7F3;
+  --bg-surface:    #FFFFFF;
+  --bg-elevated:   #F5F7F3;
+  --bg-overlay:    rgba(233, 237, 230, 0.92);
+  --bg-input:      #FFFFFF;
+  --bg-hover:      rgba(32, 35, 34, 0.05);
+  --bg-active:     rgba(32, 35, 34, 0.08);
+
+  /* Borders */
+  --border:        #D2D9CE;
+  --border-bright: #B7C0B2;
+  --border-focus:  rgba(63, 98, 18, 0.55);
+  --border-input:  #C9D1C4;
+
+  /* Accents — graphite fill with lime text; lime itself fails contrast on light bg */
+  --accent:        #202322;
+  --accent-dim:    rgba(63, 98, 18, 0.10);
+  --accent-border: rgba(63, 98, 18, 0.28);
+  --accent-glow:   rgba(63, 98, 18, 0.14);
+  --accent-hover:  #343B37;
+  --text-on-accent:#C6F36B;
+
+  /* Glows & Glass */
+  --glow-primary:  rgba(32, 35, 34, 0.06);
+  --glass-bg:      rgba(255, 255, 255, 0.6);
+  --glass-border:  rgba(32, 35, 34, 0.06);
+
+  /* Status */
+  --green:         #3F6212;
+  --green-dim:     rgba(63, 98, 18, 0.10);
+  --green-border:  rgba(63, 98, 18, 0.28);
+  --red:           #B42318;
+  --red-dim:       rgba(180, 35, 24, 0.10);
+  --yellow:        #B45309;
+  --yellow-dim:    rgba(180, 83, 9, 0.10);
+  --blue:          #0369A1;
+  --blue-dim:      rgba(3, 105, 161, 0.10);
+  --cyan:          #0369A1;
+  --cyan-dim:      rgba(3, 105, 161, 0.10);
+  --amber:         #B45309;
+  --amber-dim:     rgba(180, 83, 9, 0.10);
+  --sky:           #0369A1;
+  --sky-dim:       rgba(3, 105, 161, 0.10);
+
+  /* Text */
+  --text:          #202322;
+  --text-strong:   #202322;
+  --text-muted:    #4A524D;
+  --text-soft:     #6B746E;
+  --text-accent:   #3F6212;
+
+  /* Shadows */
+  --shadow-sm:     0 1px 3px rgba(32,35,34,0.08);
+  --shadow-md:     0 4px 16px rgba(32,35,34,0.10);
+  --shadow-lg:     0 8px 32px rgba(32,35,34,0.12);
+  --shadow-accent: 0 0 0 3px rgba(63, 98, 18, 0.16);
+}
+
+/* ─── SHARED TOKENS (theme-independent) ─────── */
+:root {
+  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', 'Inter Variable', system-ui, sans-serif;
+  --font-body:    'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+  --sans-font:    var(--font-body);
+  --mono-font:    var(--font-mono);
+
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius:      10px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-xl:   20px;
+
+  --sidebar-w:   220px;
+
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+}
