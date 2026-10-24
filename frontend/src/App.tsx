@@ -12,7 +12,7 @@ import {
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, updateClientAuth, fetchClientStats,
-  googleLinkLoginUrl, fetchLinkStatus, tierOf, createCheckoutSession, updateClientRoutes,
+  googleLinkLoginUrl, fetchLinkStatus, createCheckoutSession, updateClientRoutes,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused
 } from './lib/api'
 import type { FolderShareConfig, NewShareRequest } from './lib/shares'
@@ -30,7 +30,6 @@ import { NAV_ITEMS, type Page } from './lib/navigation'
 import LoadingScreen from './components/screens/LoadingScreen'
 import GateScreen from './components/screens/GateScreen'
 import SubdomainScreen from './components/screens/SubdomainScreen'
-import VerifyBanner from './components/dashboard/VerifyBanner'
 import DashboardPage from './components/pages/DashboardPage'
 import TunnelsPage from './components/pages/TunnelsPage'
 import RequestsPage from './components/pages/RequestsPage'
@@ -59,9 +58,6 @@ export default function App() {
     const saved = window.localStorage.getItem('kexoz-active-page')
     return (NAV_ITEMS.some(item => item.id === saved) ? saved : 'dashboard') as Page
   })
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    window.localStorage.getItem('kexoz-sidebar-collapsed') === 'true'
-  )
   const [session, setSession] = useState<ClientSession | null>(null)
 
   useEffect(() => {
@@ -787,17 +783,9 @@ export default function App() {
             activePage={activePage}
             onNavigate={setActivePage}
             requestCount={totalRequests}
-            theme={theme}
-            onToggleTheme={toggleTheme}
             ownerEmail={session.ownerEmail}
             onLogin={() => void startGoogleVerify()}
             onLogout={handleLogout}
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={() => setSidebarCollapsed(v => {
-              const next = !v
-              window.localStorage.setItem('kexoz-sidebar-collapsed', String(next))
-              return next
-            })}
           />
         )}
 
@@ -835,13 +823,7 @@ export default function App() {
         {step === 'dashboard' && session && (
           <>
             {activePage === 'dashboard' && (
-              <>
-                {tierOf(session) === 'anonymous' && gauthEnabled && (
-                  <div style={{ padding: '0 28px', paddingTop: 16 }}>
-                    <VerifyBanner onVerify={() => void startGoogleVerify()} verifying={verifying} />
-                  </div>
-                )}
-                <DashboardPage
+              <DashboardPage
                 session={session}
                 connState={connState}
                 portInput={portInput}
@@ -866,7 +848,6 @@ export default function App() {
                 tunnelType={persistentTunnels.find(t => t.id === selectedTunnelId)?.tunnelType}
                 folderPath={selectedTunnelId ? folderShares[selectedTunnelId]?.root : undefined}
               />
-              </>
             )}
 
             {activePage === 'tunnels' && (
@@ -917,6 +898,7 @@ export default function App() {
                 setDomainInput={setDomainInput}
                 onDomainSubmit={handleDomainSubmit}
                 isBusy={isBusy}
+                onUpgrade={() => void handleUpgrade()}
               />
             )}
 

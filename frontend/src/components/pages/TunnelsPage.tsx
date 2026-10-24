@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react'
-import { AlertTriangle, Edit2 } from 'lucide-react'
 import type { ClientSession, ConnectionState, PersistentTunnel } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, shareAccess, shareHost, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
@@ -106,8 +105,8 @@ function TunnelNameRow({ tunnel, tunnelNames, onRenameTunnel }: { tunnel: Persis
       ) : (
         <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong>
       )}
-      <button className="ps-rename-btn" onClick={(e) => { e.stopPropagation(); setEditing(true); setValue(customName ?? '') }} title="Rename tunnel">
-        <Edit2 size={12} />
+      <button className="ps-rename-btn" onClick={(e) => { e.stopPropagation(); setEditing(true); setValue(customName ?? '') }} title="Rename share">
+        Rename
       </button>
     </div>
   )
@@ -144,6 +143,7 @@ export default function TunnelsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Shares</h1>
+          <p className="ps-page-subtitle">Start, pause or remove the things you've shared</p>
         </div>
         <div className="ps-header-actions">
           <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewTunnel}>
@@ -159,12 +159,7 @@ export default function TunnelsPage({
             <div>
               <div className="ps-section-title">Your shares</div>
               <div className="ps-tunnel-card-subtitle">
-                Ports, terminals and folders shared from this client
-                {persistentTunnels.length > 0 && (
-                  <span style={{ color: 'var(--text-soft)', marginLeft: 6 }}>
-                    · Export in <strong style={{ color: 'var(--text-muted)' }}>Settings → Tunnel</strong>
-                  </span>
-                )}
+                Ports, terminals and folders shared from this device
               </div>
             </div>
             <span className="ps-badge ps-badge-gray">{persistentTunnels.length}</span>
@@ -324,12 +319,8 @@ export default function TunnelsPage({
 
               {selectedTunnel && shareAccess(selectedTunnel) === 'public' && (
                 <div className="ps-exposure-warning" role="status" style={{ margin: '0 16px 12px' }}>
-                  <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
                   <span>
-                    <strong>Public share.</strong> Anyone with the link can reach this {isFolder ? 'folder' : 'service'}.
-                    {selectedTunnel.tunnelType === 'tcp' || selectedTunnel.tunnelType === 'udp' || selectedTunnel.tunnelType === 'e2e'
-                      ? ' Kexoz cannot check visitors on this type, so protect the service itself.'
-                      : ' Delete and recreate it as private to require sign-in or a password.'}
+                    <strong>Public.</strong> Anyone with the link can open this {isFolder ? 'folder' : 'service'}.
                   </span>
                 </div>
               )}

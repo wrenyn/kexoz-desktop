@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Shield, X, Rocket } from 'lucide-react'
 import { API_BASE_URL } from '../../lib/api'
 
 type Plan = {
@@ -89,14 +88,11 @@ export default function UpgradeModal({ currentPlan, onClose, onCheckout }: Props
       <div className="ps-modal upgrade-modal">
         <div className="ps-modal-header">
           <div>
-            <div className="ps-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Rocket size={18} style={{ color: 'var(--accent)' }} />
-              Upgrade plan
-            </div>
+            <div className="ps-modal-title">Plans</div>
             <div className="ps-tunnel-card-subtitle">Month-to-month. Cancel anytime.</div>
           </div>
-          <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose} style={{ padding: 4 }}>
-            <X size={16} />
+          <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose}>
+            Close
           </button>
         </div>
 
@@ -133,15 +129,12 @@ export default function UpgradeModal({ currentPlan, onClose, onCheckout }: Props
                     <div className="upgrade-plan-bw">{formatBytes(plan.bandwidthLimit)} / month</div>
                     <ul className="upgrade-plan-features">
                       {plan.features.map(f => (
-                        <li key={f}>
-                          <CheckCircle2 size={13} style={{ color: 'var(--green)', marginRight: 6, flexShrink: 0 }} />
-                          {f}
-                        </li>
+                        <li key={f}>{f}</li>
                       ))}
                     </ul>
                     {isCurrent ? (
                       <div className="upgrade-plan-current">
-                        <Shield size={14} style={{ color: 'var(--green)', marginRight: 6 }} /> Active plan
+                        Active plan
                       </div>
                     ) : (
                       <button

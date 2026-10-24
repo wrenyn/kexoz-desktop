@@ -1,5 +1,4 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { AlertTriangle, FolderOpen } from 'lucide-react'
 import { QUICK_PORTS } from '../../lib/storage'
 import { ROOT_DOMAIN, type ShareAccess, type SharePermissions, type Tier, type TunnelType } from '../../lib/api'
 import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, isGatedType, parseExcludes, type FolderInfo, type NewShareRequest } from '../../lib/shares'
@@ -334,7 +333,7 @@ export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
                 <label className="ps-label">Folder</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void chooseFolder()}>
-                    <FolderOpen size={14} /> {folder ? 'Change folder' : 'Choose folder'}
+                    {folder ? 'Change folder' : 'Choose folder'}
                   </button>
                   {folder && <span className="ps-folder-path">{folder.path}</span>}
                 </div>
@@ -405,8 +404,7 @@ export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
             )}
             {access === 'public' && (
               <div className="ps-exposure-warning" role="status">
-                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span><strong>Anyone on the internet can reach this {resourceNoun}.</strong> Only share it if it is safe to be public, and consider an expiry.</span>
+                <span>Anyone with the link can open this {resourceNoun}.</span>
               </div>
             )}
             {needsPassword && (

@@ -1,5 +1,3 @@
-import { Plus, Trash2 } from 'lucide-react'
-
 type RouteRule = { path: string; port: number }
 
 type Props = {
@@ -17,7 +15,7 @@ export default function RouteRulesEditor({ rules, onChange, portStatus }: Props)
           <div className="ps-settings-row-label">Path routing</div>
           <div className="ps-settings-row-desc">Route /api/* and other paths to different local ports.</div>
         </div>
-        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={addRule}><Plus size={13} /> Add route</button>
+        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={addRule}>Add route</button>
       </div>
       {rules.map((rule, index) => (
         <div className="ps-route-rule" key={index}>
@@ -33,7 +31,7 @@ export default function RouteRulesEditor({ rules, onChange, portStatus }: Props)
             onChange(next)
           }} />
           <span className={`ps-route-port-status ${portStatus[rule.port] === true ? 'listening' : portStatus[rule.port] === false ? 'offline' : ''}`}>{portStatus[rule.port] === true ? 'Listening' : portStatus[rule.port] === false ? 'Offline' : 'Checking'}</span>
-          <button type="button" className="ps-btn-icon" title="Remove route" onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={13} /></button>
+          <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
         </div>
       ))}
     </div>

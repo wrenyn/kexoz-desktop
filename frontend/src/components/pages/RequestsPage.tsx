@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Trash2, Search, Copy, Download, MousePointerClick, ArrowRightLeft, RotateCcw } from 'lucide-react'
 import type { RequestLogEntry } from '../../lib/api'
 import { isNoiseRequestPath } from '../../lib/tunnel'
 
@@ -177,7 +176,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                 {showFrameworkRequests ? 'Hide assets' : 'Show assets'}
               </button>
               <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClear} style={{ color: 'var(--red)' }}>
-                <Trash2 size={13} style={{ marginRight: 4 }} />
                 Clear
               </button>
             </div>
@@ -185,7 +183,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
           <div className="ps-req-filters">
             <div className="ps-req-search">
-              <Search size={14} className="ps-req-search-icon" />
               <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search path…" />
             </div>
             <select value={methodFilter} onChange={event => setMethodFilter(event.target.value)}>
@@ -207,9 +204,8 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
           {displayLog.length === 0 ? (
             <div className="ps-empty" style={{ flex: 1 }}>
-              <ArrowRightLeft size={32} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
               <span className="ps-empty-title">No requests yet</span>
-              <span className="ps-empty-sub">Make a request to your tunnel URL to see it appear here.</span>
+              <span className="ps-empty-sub">Open your link and requests will show up here.</span>
               {publicUrl && (
                 <button
                   className="ps-btn ps-btn-secondary ps-btn-sm"
@@ -218,8 +214,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                     await navigator.clipboard.writeText(publicUrl).catch(() => {})
                   }}
                 >
-                  <Copy size={12} style={{ marginRight: 4 }} />
-                  Copy tunnel URL
+                  Copy link
                 </button>
               )}
             </div>
@@ -295,30 +290,24 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                   disabled={replaying || !publicUrl}
                   title={publicUrl ? 'Replay this request' : 'No active tunnel'}
                 >
-                  <RotateCcw size={13} style={{ marginRight: 4 }} />
                   {replaying ? 'Replaying...' : 'Replay'}
                 </button>
                 {replayResult && originalForReplay && (
                   <div className="ps-replay-diff">
                     <span className="ps-replay-diff-orig">
-                      ← {originalForReplay.status ?? '?'}
+                      Was {originalForReplay.status ?? '?'}
                       {originalForReplay.durationMs != null ? ` ${originalForReplay.durationMs}ms` : ''}
                     </span>
-                    <span style={{ color: 'var(--text-soft)', fontSize: 10 }}>→</span>
                     <span className={`ps-replay-diff-new ${replayResult.ok ? 'ok' : 'err'}`}>
-                      {replayResult.status || 'ERR'}
+                      now {replayResult.status || 'error'}
                       {replayResult.durationMs != null ? ` ${replayResult.durationMs}ms` : ''}
-                      {' '}
-                      {replayResult.ok && originalForReplay.status === replayResult.status ? '✓ Match' : replayResult.ok ? '✓' : '✗'}
                     </span>
                   </div>
                 )}
                 <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copyCurl()}>
-                  <Copy size={13} style={{ marginRight: 4 }} />
                   {copied ? 'Copied' : 'Copy curl'}
                 </button>
                 <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={exportCurl}>
-                  <Download size={13} style={{ marginRight: 4 }} />
                   Export .sh
                 </button>
               </div>
@@ -418,9 +407,8 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
             </>
           ) : (
             <div className="ps-empty" style={{ flex: 1 }}>
-              <MousePointerClick size={32} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
               <span className="ps-empty-title">Select a request</span>
-              <span className="ps-empty-sub">Click any request in the list to inspect headers, body, and timing.</span>
+              <span className="ps-empty-sub">Pick one from the list to see its headers, body and timing.</span>
             </div>
           )}
         </div>

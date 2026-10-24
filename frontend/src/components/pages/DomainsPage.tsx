@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Globe, Plus, Copy, X, Sparkles } from 'lucide-react'
 import type { ClientSession } from '../../lib/api'
-import { ROOT_DOMAIN } from '../../lib/api'
+import { ROOT_DOMAIN, tierOf } from '../../lib/api'
 
 type Props = {
   session: ClientSession | null
@@ -9,6 +8,7 @@ type Props = {
   setDomainInput: (v: string) => void
   onDomainSubmit: (e: FormEvent<HTMLFormElement>) => void
   isBusy: boolean
+  onUpgrade: () => void
 }
 
 type DomainEntry = {
@@ -25,8 +25,11 @@ const statusBadge = {
   error:   'ps-badge-red',
 }
 
-export default function DomainsPage({ session, domainInput, setDomainInput, onDomainSubmit, isBusy }: Props) {
+export default function DomainsPage({ session, domainInput, setDomainInput, onDomainSubmit, isBusy, onUpgrade }: Props) {
   const [showAddCustom, setShowAddCustom] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const tier = session ? tierOf(session) : 'anonymous'
+  const isPro = tier === 'pro' || tier === 'pro_plus'
 
   const domains: DomainEntry[] = [
     ...(session?.subdomain ? [{
@@ -45,29 +48,35 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
     }] : []),
   ]
 
+  const copyUrl = (domain: DomainEntry) => {
+    void navigator.clipboard.writeText(`https://${domain.name}`).then(() => {
+      setCopiedId(domain.id)
+      window.setTimeout(() => setCopiedId(null), 1600)
+    })
+  }
+
   return (
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Domains</h1>
-          <p className="ps-page-subtitle">Subdomains and custom domains for this client</p>
+          <p className="ps-page-subtitle">Where people can reach your shares</p>
         </div>
-        <div className="ps-header-actions">
-          <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => setShowAddCustom(true)}>
-            <Plus size={13} style={{ marginRight: 4 }} />
-            Add custom domain
-          </button>
-        </div>
+        {isPro && (
+          <div className="ps-header-actions">
+            <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => setShowAddCustom(true)}>
+              Add custom domain
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="ps-page-content">
-        {/* Domain list */}
         <div className="ps-card animate-fade-up">
           {domains.length === 0 ? (
             <div className="ps-empty">
-              <Globe size={32} style={{ color: 'var(--text-muted)', marginBottom: 12 }} />
-              <span className="ps-empty-title">No domains configured</span>
-              <span className="ps-empty-sub">Your Kexoz subdomain will appear here once you connect a tunnel.</span>
+              <span className="ps-empty-title">No domains yet</span>
+              <span className="ps-empty-sub">Your Kexoz address shows up here once you pick one.</span>
             </div>
           ) : (
             domains.map(domain => (
@@ -76,20 +85,16 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
                   <div className="ps-domain-name">{domain.name}</div>
                   <div className="ps-domain-sub">
                     {domain.type === 'subdomain'
-                      ? `Kexoz subdomain · forwarding to ${domain.target}`
-                      : `Custom domain → ${domain.target}`}
+                      ? `Forwards to ${domain.target}`
+                      : `Points to ${domain.target}`}
                   </div>
                 </div>
                 <span className={`ps-badge ${statusBadge[domain.status]}`}>
-                  {domain.status === 'active' ? 'Active' : domain.status === 'pending' ? 'Pending DNS' : 'Error'}
+                  {domain.status === 'active' ? 'Active' : domain.status === 'pending' ? 'Waiting for DNS' : 'Error'}
                 </span>
                 <div className="ps-domain-actions">
-                  <button
-                    className="ps-btn ps-btn-ghost ps-btn-sm"
-                    onClick={() => void navigator.clipboard.writeText(`https://${domain.name}`)}
-                  >
-                    <Copy size={13} style={{ marginRight: 4 }} />
-                    Copy URL
+                  <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => copyUrl(domain)}>
+                    {copiedId === domain.id ? 'Copied' : 'Copy link'}
                   </button>
                 </div>
               </div>
@@ -97,15 +102,11 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
           )}
         </div>
 
-        {/* DNS instructions */}
         {session?.customDomain && (
-          <div className="ps-card animate-fade-up delay-100" style={{ padding: '16px 20px' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-              DNS Configuration
-            </div>
-            <p style={{ fontSize: 12.5, color: 'var(--text-soft)', marginBottom: 12, lineHeight: 1.6 }}>
-              Add this CNAME record to your DNS provider to activate your custom domain.
-              Propagation can take up to 48 hours.
+          <div className="ps-card ps-domains-section animate-fade-up delay-100">
+            <div className="ps-domains-section-title">DNS record</div>
+            <p className="ps-domains-section-text">
+              Add this record at your DNS provider. It can take a few hours to start working.
             </p>
             <div className="ps-code">
               <div style={{ display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: '0 24px' }}>
@@ -120,28 +121,24 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
           </div>
         )}
 
-        {/* Info card for Pro feature */}
-        <div className="ps-card animate-fade-up delay-150" style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles size={14} style={{ color: 'var(--text-accent)' }} />
-            Custom domains require Pro
+        {!isPro && (
+          <div className="ps-card ps-domains-section ps-domains-upsell animate-fade-up delay-150">
+            <div>
+              <div className="ps-domains-section-title">Use your own domain</div>
+              <p className="ps-domains-section-text">Custom domains are part of Pro.</p>
+            </div>
+            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onUpgrade}>
+              See plans
+            </button>
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text-soft)', lineHeight: 1.6 }}>
-            Map any domain you own to your Kexoz tunnel — no server needed.
-            Upgrade to Pro to enable custom domain mapping with automatic CNAME routing.
-          </p>
-        </div>
+        )}
       </div>
 
-      {/* Add custom domain modal */}
       {showAddCustom && (
         <div className="ps-modal-overlay" onClick={() => setShowAddCustom(false)}>
           <div className="ps-modal" onClick={e => e.stopPropagation()}>
             <div className="ps-modal-header">
               <span className="ps-modal-title">Add custom domain</span>
-              <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setShowAddCustom(false)} style={{ padding: 4 }}>
-                <X size={14} />
-              </button>
             </div>
             <form onSubmit={e => { onDomainSubmit(e); setShowAddCustom(false) }}>
               <div className="ps-modal-body">
@@ -151,14 +148,14 @@ export default function DomainsPage({ session, domainInput, setDomainInput, onDo
                     className="ps-input"
                     value={domainInput}
                     onChange={e => setDomainInput(e.target.value.toLowerCase())}
-                    placeholder="tunnel.yourdomain.com"
+                    placeholder="app.yourdomain.com"
                     autoFocus
                   />
                 </div>
                 <div className="ps-code" style={{ fontSize: 11.5, lineHeight: 1.8 }}>
-                  <div style={{ marginBottom: 6, color: 'var(--text-soft)' }}>After adding, create this DNS record:</div>
+                  <div style={{ marginBottom: 6, color: 'var(--text-soft)' }}>Then add this DNS record:</div>
                   <div><span style={{ color: 'var(--text-muted)' }}>Type:</span> CNAME</div>
-                  <div><span style={{ color: 'var(--text-muted)' }}>Target:</span> {session?.subdomain}.{ROOT_DOMAIN}</div>
+                  <div><span style={{ color: 'var(--text-muted)' }}>Value:</span> {session?.subdomain}.{ROOT_DOMAIN}</div>
                 </div>
               </div>
               <div className="ps-modal-footer">

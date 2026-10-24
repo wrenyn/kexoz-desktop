@@ -1,5 +1,4 @@
 import { type FormEvent, useState } from 'react'
-import { Plus, Copy, Lock, ShieldAlert, BarChart3, Clock, ArrowRightLeft, QrCode, Zap, Shield, Eye, Server, FolderOpen } from 'lucide-react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from 'recharts'
 import type { ClientSession, ConnectionState, RequestLogEntry, TunnelType, UsagePoint } from '../../lib/api'
 import { ROOT_DOMAIN, tierOf } from '../../lib/api'
@@ -88,10 +87,10 @@ export default function DashboardPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Dashboard</h1>
+          <p className="ps-page-subtitle">Your public link and what's coming through it</p>
         </div>
         <div className="ps-header-actions">
           <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onOpenNewTunnel}>
-            <Plus size={13} style={{ marginRight: 4 }} />
             New share
           </button>
         </div>
@@ -115,9 +114,8 @@ export default function DashboardPage({
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                         {publicUrl}
                       </span>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setShowQr(v => !v); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-soft)', cursor: 'pointer', padding: 2, display: 'flex' }}><QrCode size={14} /></button>
-                      <span style={{ fontSize: 11, color: copyFeedback === 'copied' ? 'var(--green)' : 'var(--text-soft)', flexShrink: 0, marginLeft: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Copy size={11} />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setShowQr(v => !v); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-soft)', cursor: 'pointer', padding: '2px 4px', fontSize: 11, fontFamily: 'inherit' }}>QR</button>
+                      <span style={{ fontSize: 11, color: copyFeedback === 'copied' ? 'var(--green)' : 'var(--text-soft)', flexShrink: 0, marginLeft: 4 }}>
                         {copyFeedback === 'copied' ? 'Copied' : 'Copy'}
                       </span>
                     </div>
@@ -133,17 +131,17 @@ export default function DashboardPage({
               {/* Tunnel mode trust badge */}
               {(() => {
                 const modeMap = {
-                  http:  { icon: <Eye size={10} />, label: 'Standard', color: 'var(--text-soft)' },
-                  e2e:   { icon: <Shield size={10} />, label: 'Private E2E', color: 'var(--cyan)' },
-                  tcp:   { icon: <Server size={10} />, label: 'TCP', color: 'var(--blue)' },
-                  udp:   { icon: <Server size={10} />, label: 'UDP', color: 'var(--blue)' },
-                  pty:   { icon: <Server size={10} />, label: 'Terminal', color: 'var(--yellow)' },
-                  folder: { icon: <FolderOpen size={10} />, label: 'Folder', color: 'var(--sky)' },
+                  http:  { label: 'HTTP', color: 'var(--text-soft)' },
+                  e2e:   { label: 'Private E2E', color: 'var(--cyan)' },
+                  tcp:   { label: 'TCP', color: 'var(--blue)' },
+                  udp:   { label: 'UDP', color: 'var(--blue)' },
+                  pty:   { label: 'Terminal', color: 'var(--yellow)' },
+                  folder: { label: 'Folder', color: 'var(--sky)' },
                 }
                 const mode = modeMap[tunnelType as keyof typeof modeMap] ?? modeMap.http
                 return (
                   <span className="ps-trust-badge" style={{ color: mode.color, borderColor: `${mode.color}44`, background: `${mode.color}11` }} title={`Tunnel mode: ${mode.label}`}>
-                    {mode.icon}{mode.label}
+                    {mode.label}
                   </span>
                 )
               })()}
@@ -189,7 +187,6 @@ export default function DashboardPage({
                 {detectedPorts.length > 0 && !portInput && (
                   <div className="ps-quickconnect-cta">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                      <Zap size={14} style={{ color: 'var(--text-accent)', flexShrink: 0 }} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>
                           {detectedPorts[0].label} detected on :{detectedPorts[0].port}
@@ -206,15 +203,13 @@ export default function DashboardPage({
                       className="ps-btn ps-btn-primary ps-btn-sm"
                       onClick={() => setPortInput(String(detectedPorts[0].port))}
                     >
-                      Connect →
+                      Use this port
                     </button>
                   </div>
                 )}
                 {detectedPorts.length > 0 && portInput && (
                   <div className="ps-detected-ports">
-                    <span className="ps-label" style={{ fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Zap size={10} style={{ color: 'var(--text-accent)' }} /> Detected services
-                    </span>
+                    <span className="ps-label" style={{ fontSize: 10.5 }}>Detected services</span>
                     <div className="ps-detected-list">
                       {detectedPorts.map(({ port, label }) => (
                         <button
@@ -238,11 +233,10 @@ export default function DashboardPage({
             {gauthEnabled && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20 }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Lock size={14} style={{ color: session?.requireAuth ? 'var(--cyan)' : 'var(--text-muted)' }} />
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
                       Auth wall
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-soft)', marginTop: 2, paddingLeft: 20 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-soft)', marginTop: 2 }}>
                       {session?.requireAuth ? 'Requires Google sign-in' : 'Public access'}
                     </div>
                   </div>
@@ -259,20 +253,16 @@ export default function DashboardPage({
               )}
             </div>
 
-            {/* Stats bar — glassmorphism stat cards */}
             <div className="ps-stat-cards">
               <div className="ps-stat-card">
-                <div className="ps-stat-card-icon" style={{ color: 'var(--text-accent)' }}><ArrowRightLeft size={14} /></div>
                 <div className="ps-stat-card-value">{totalRequests.toLocaleString()}</div>
                 <div className="ps-stat-card-label">Requests</div>
               </div>
               <div className="ps-stat-card">
-                <div className="ps-stat-card-icon" style={{ color: 'var(--text-accent)' }}><BarChart3 size={14} /></div>
                 <div className="ps-stat-card-value">{formatBytes(bytesIn + bytesOut)}</div>
                 <div className="ps-stat-card-label">Transferred</div>
               </div>
               <div className="ps-stat-card">
-                <div className="ps-stat-card-icon" style={{ color: 'var(--text-accent)' }}><Clock size={14} /></div>
                 <div className="ps-stat-card-value">{connState === 'connected' ? formatUptime(uptimeSeconds) : '—'}</div>
                 <div className="ps-stat-card-label">Uptime</div>
               </div>
@@ -343,9 +333,8 @@ export default function DashboardPage({
         {/* ── E2E CLI info ── */}
         {session?.subdomain && tunnelType === 'e2e' && (
           <div className="ps-card animate-fade-up delay-100" style={{ padding: '16px 20px' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <ShieldAlert size={14} style={{ color: 'var(--yellow)' }} />
-              CLI required for E2E encryption
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>
+              Run this with the CLI for end-to-end encryption
             </div>
             <div className="ps-code">
               kexoz proxy --port {portInput || '443'} --subdomain {session.subdomain}
