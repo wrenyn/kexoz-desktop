@@ -40,3 +40,41 @@ jobs:
       - name: Lint
         working-directory: electron
         run: npm run lint
+  package:
+    needs: [frontend, electron]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      VITE_KEXOZ_API_BASE: https://api.kexoz.dev
+      VITE_KEXOZ_ROOT_DOMAIN: kexoz.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Linux packaging tools
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm zip
+      - name: Install
+        run: |
+          npm ci --prefix frontend
+          npm ci --prefix electron
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Build installers
+        working-directory: electron
+        run: npx electron-forge make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kexoz-desktop-${{ matrix.os }}
+          path: |
+            electron/out/make/**/*.exe
+            electron/out/make/**/*.zip
+            electron/out/make/**/*.deb
+            electron/out/make/**/*.rpm
+          if-no-files-found: error
+          retention-days: 7
