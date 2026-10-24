@@ -811,14 +811,10 @@ export default function App() {
 
             {activePage === 'tunnels' && (
               <TunnelsPage
-                session={session}
-                connState={connState}
                 portInput={portInput}
                 setPortInput={setPortInput}
                 onPortSubmit={handlePortSubmit}
                 isBusy={isBusy}
-                onCopyUrl={handleCopyUrl}
-                copyFeedback={copyFeedback}
                 routeRules={routeRules}
                 onRouteRulesChange={setRouteRules}
                 routePortStatus={routePortStatus}
