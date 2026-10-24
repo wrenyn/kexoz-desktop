@@ -38,7 +38,7 @@ jobs:
               electron/release-assets/kexoz-linux-x64.deb
               electron/release-assets/kexoz-linux-x64.rpm
               electron/release-assets/Kexoz-linux-x64.zip
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             arch: arm64
             files: |
               electron/release-assets/kexoz-linux-arm64.deb
@@ -59,7 +59,7 @@ jobs:
           node-version: 22
 
       - name: Install Linux packaging tools
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y fakeroot rpm zip
 
       - name: Sync package version from tag
