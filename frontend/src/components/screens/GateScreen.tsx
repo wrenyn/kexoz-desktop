@@ -1,11 +1,10 @@
 import Logo from '../ui/Logo'
-import { ArrowRight, Sun, Moon, Shield, Zap } from 'lucide-react'
+import { Sun, Moon } from 'lucide-react'
 
 type GateScreenProps = {
   onLogin: () => void
   onSkip: () => void
   verifying: boolean
-  gauthEnabled: boolean
   theme: 'light' | 'dark'
   onToggleTheme: () => void
 }
@@ -36,7 +35,7 @@ const Spinner = () => (
   }} />
 )
 
-export default function GateScreen({ onLogin, onSkip, verifying, gauthEnabled, theme, onToggleTheme }: GateScreenProps) {
+export default function GateScreen({ onLogin, onSkip, verifying, theme, onToggleTheme }: GateScreenProps) {
   return (
     <div className="ps-splash">
 
@@ -150,40 +149,9 @@ export default function GateScreen({ onLogin, onSkip, verifying, gauthEnabled, t
               letterSpacing: '-0.01em',
             }}
           >
-            <ArrowRight size={15} />
-            Use a random ID (guest mode)
+            Continue as guest
           </button>
         </div>
-
-        {/* Perks row */}
-        <div className="animate-gate-line-4" style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr',
-          gap: 7, marginTop: 16, width: '100%',
-        }}>
-          {[
-            { icon: <Zap size={11} />, label: gauthEnabled ? '1 GB with Google' : '100 MB to start' },
-            { icon: <Shield size={11} />, label: 'E2E encryption' },
-            { icon: <ArrowRight size={11} />, label: 'Manage billing in browser' },
-          ].map(({ icon, label }) => (
-            <div key={label} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 10px', borderRadius: 8,
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-              fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 500,
-            }}>
-              <span style={{ color: 'var(--text-soft)', flexShrink: 0 }}>{icon}</span>
-              {label}
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <p className="animate-gate-line-5" style={{
-          fontSize: 11, color: 'var(--text-soft)', textAlign: 'center',
-          marginTop: 14, lineHeight: 1.5,
-        }}>
-          Upgrade to Pro for 100 GB bandwidth & custom domains.
-        </p>
       </div>
     </div>
   )

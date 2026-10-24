@@ -453,7 +453,7 @@ export default function App() {
   const skipGate = useCallback(() => {
     verifyAttempt.current += 1
     setVerifying(false)
-    toast.success('Continuing as guest with 100 MB bandwidth. Verify anytime for 1 GB free.')
+    toast.success('Continuing as guest')
     setStep(cur => {
       if (cur !== 'gate') return cur
       return session?.subdomain ? 'dashboard' : 'subdomain'
@@ -816,7 +816,6 @@ export default function App() {
             onLogin={() => void startGoogleVerify()}
             onSkip={skipGate}
             verifying={verifying}
-            gauthEnabled={gauthEnabled}
             theme={theme}
             onToggleTheme={toggleTheme}
           />
