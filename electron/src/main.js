@@ -273,6 +273,7 @@ const createWindow = () => {
     minWidth: 960,
     minHeight: 640,
     title: 'Kexoz',
+    icon: path.join(__dirname, '../assets/icon.png'),
     backgroundColor: '#202322',
     show: false,
     autoHideMenuBar: true,
@@ -319,7 +320,7 @@ const createWindow = () => {
 };
 
 const createTray = () => {
-  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/logo.png'));
+  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/tray.png'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('Kexoz');
   tray.setContextMenu(Menu.buildFromTemplate([

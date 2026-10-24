@@ -4,7 +4,8 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 module.exports = {
   packagerConfig: {
     asar: true,
-    icon: './assets/logo.png',
+    // No extension: packager picks icon.ico, icon.icns or icon.png per platform.
+    icon: './assets/icon',
     executableName: 'kexoz',
     extraResource: ['../frontend/dist'],
   },
@@ -15,6 +16,9 @@ module.exports = {
       config: {
         name: 'kexoz-desktop',
         setupExe: 'Kexoz-Setup.exe',
+        setupIcon: './assets/icon.ico',
+        // Squirrel needs a URL for the Programs and Features icon.
+        iconUrl: 'https://raw.githubusercontent.com/wrenyn/kexoz-desktop/main/electron/assets/icon.ico',
       },
     },
     {
@@ -26,7 +30,9 @@ module.exports = {
       config: {
         options: {
           name: 'kexoz-desktop',
+          productName: 'Kexoz',
           bin: 'kexoz',
+          icon: './assets/icon.png',
         },
       },
     },
@@ -35,7 +41,9 @@ module.exports = {
       config: {
         options: {
           name: 'kexoz-desktop',
+          productName: 'Kexoz',
           bin: 'kexoz',
+          icon: './assets/icon.png',
         },
       },
     },
