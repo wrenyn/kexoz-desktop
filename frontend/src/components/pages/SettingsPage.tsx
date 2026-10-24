@@ -1,4 +1,4 @@
-import { tierOf, type ClientSession, type PersistentTunnel } from '../../lib/api'
+import { tierOf, type ClientSession } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
 
 type Props = {
@@ -11,9 +11,6 @@ type Props = {
   onUpgrade: () => void
   verifying: boolean
   gauthEnabled: boolean
-  tunnels: PersistentTunnel[]
-  onExportTunnels: () => void
-  onImportTunnels: (file: File) => void
 }
 
 const TIER_LABEL: Record<string, string> = {
@@ -26,7 +23,7 @@ const TIER_LABEL: Record<string, string> = {
 export default function SettingsPage({
   theme, onToggleTheme, autoStart, onToggleAutoStart,
   session, onVerify, onUpgrade,
-  verifying, gauthEnabled, tunnels, onExportTunnels, onImportTunnels,
+  verifying, gauthEnabled,
 }: Props) {
   const tier = tierOf(session)
 
@@ -35,6 +32,7 @@ export default function SettingsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Settings</h1>
+          <p className="ps-page-subtitle">Appearance, startup and your account</p>
         </div>
       </div>
 
@@ -136,31 +134,6 @@ export default function SettingsPage({
               </a>
             </div>
           </section>
-
-          <section className="ps-card ps-settings-section">
-            <div className="ps-settings-section-title">Tunnels</div>
-
-            <div className="ps-settings-row">
-              <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Tunnel configuration</div>
-                <div className="ps-settings-row-desc">Backup or restore {tunnels.length} saved tunnel{tunnels.length === 1 ? '' : 's'} as JSON</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onExportTunnels} disabled={!tunnels.length}>
-                  Export
-                </button>
-                <label className="ps-btn ps-btn-secondary ps-btn-sm" style={{ cursor: 'pointer' }}>
-                  Import
-                  <input type="file" accept="application/json,.json" hidden onChange={event => {
-                    const file = event.target.files?.[0]
-                    if (file) onImportTunnels(file)
-                    event.currentTarget.value = ''
-                  }} />
-                </label>
-              </div>
-            </div>
-          </section>
-
         </div>
       </div>
     </div>

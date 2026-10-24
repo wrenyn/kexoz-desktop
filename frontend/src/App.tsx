@@ -692,47 +692,6 @@ export default function App() {
     }
   }
 
-  const exportTunnelConfiguration = () => {
-    if (!session) return
-    const payload = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), tunnels: persistentTunnels.map(({ subdomain, customDomain, port, requireAuth, pathRoutes }) => ({ subdomain, customDomain, port, requireAuth, pathRoutes })) }, null, 2)
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'kexoz-tunnels.json'
-    link.click()
-    URL.revokeObjectURL(url)
-    toast.success('Tunnel configuration exported')
-  }
-
-  const importTunnelConfiguration = async (file: File) => {
-    if (!session) return
-    setIsBusy(true)
-    try {
-      const parsed = JSON.parse(await file.text()) as { tunnels?: Array<Partial<PersistentTunnel>> }
-      const imported = parsed.tunnels ?? []
-      if (!imported.length) throw new Error('The file does not contain any tunnels.')
-      const created = [] as PersistentTunnel[]
-      for (const tunnel of imported) {
-        const port = tunnel.port
-        if (!tunnel.subdomain || typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) continue
-        created.push(await createTunnel(session.id, {
-          subdomain: tunnel.subdomain,
-          customDomain: tunnel.customDomain ?? '',
-          port,
-          requireAuth: tunnel.requireAuth === true,
-          pathRoutes: tunnel.pathRoutes?.length ? tunnel.pathRoutes : [{ path: '/', port }],
-        }))
-      }
-      if (!created.length) throw new Error('No valid tunnel configurations were found.')
-      setPersistentTunnels(current => [...current, ...created])
-      toast.success(`Imported ${created.length} tunnels.`)
-    } catch (err) {
-      toast.error(extractError(err))
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   const handleCopyUrl = async () => {
     if (!publicUrl) return
     try {
@@ -911,9 +870,6 @@ export default function App() {
                 session={session}
                 onVerify={() => void startGoogleVerify()}
                 onUpgrade={() => void handleUpgrade()}
-                tunnels={persistentTunnels}
-                onExportTunnels={exportTunnelConfiguration}
-                onImportTunnels={(file) => void importTunnelConfiguration(file)}
                 verifying={verifying}
                 gauthEnabled={gauthEnabled}
               />
