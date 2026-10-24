@@ -32,6 +32,8 @@ type FolderServerConfig = {
 declare global {
   interface Window {
     kexoz?: {
+      platform?: string
+      setTitleBarTheme?: (theme: 'light' | 'dark') => Promise<boolean>
       localRequest: (payload: LocalRequestPayload) => Promise<LocalRequestResult>
       checkPort: (port: number) => Promise<boolean>
       notify: (payload: { title: string; body: string }) => Promise<boolean>

@@ -5,7 +5,7 @@
 Kexoz Desktop is the graphical client for [Kexoz](https://kexoz.dev). Pick something on your
 machine — a dev server, a database, a shell or a folder — and get a link you can send to anyone,
 with access control, expiry and live traffic built in. Built and maintained by
-[Wrenyn](https://github.com/wrenyn).
+[Wrenyn](https://wrenyn.com).
 
 ## What you can share
 
@@ -55,10 +55,10 @@ npm --prefix electron run lint && npm --prefix electron test
 npm --prefix electron run e2e    # end-to-end share checks against a local server
 ```
 
-Point the app at a self-hosted gateway with `VITE_KEXOZ_API_BASE` and `VITE_KEXOZ_ROOT_DOMAIN`
+Point the app at a different gateway (for example a local one) with `VITE_KEXOZ_API_BASE` and `VITE_KEXOZ_ROOT_DOMAIN`
 (see `frontend/.env.example`). See [ARCHITECTURE.md](./ARCHITECTURE.md),
 [CONTRIBUTING.md](./CONTRIBUTING.md) and [SECURITY.md](./SECURITY.md).
 
 ## License
 
-[MIT](./LICENSE) © [Wrenyn](https://github.com/wrenyn)
+[MIT](./LICENSE) © [Wrenyn](https://wrenyn.com)

@@ -245,6 +245,19 @@ ipcMain.handle('kexoz:update-tray', async (event, tunnels) => {
   return true;
 });
 
+const TITLE_BAR_HEIGHT = 36;
+const TITLE_BAR_THEMES = {
+  dark: { color: '#202322', symbolColor: '#E9EDE6' },
+  light: { color: '#E9EDE6', symbolColor: '#202322' },
+};
+
+ipcMain.handle('kexoz:set-titlebar-theme', async (_event, theme) => {
+  if (!mainWindow || process.platform === 'darwin') return false;
+  const colors = TITLE_BAR_THEMES[theme] || TITLE_BAR_THEMES.dark;
+  mainWindow.setTitleBarOverlay({ ...colors, height: TITLE_BAR_HEIGHT });
+  return true;
+});
+
 ipcMain.handle('kexoz:set-autostart', async (event, enabled) => {
   app.setLoginItemSettings({
     openAtLogin: enabled,
@@ -263,6 +276,10 @@ const createWindow = () => {
     backgroundColor: '#202322',
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 14, y: 12 } }
+      : { titleBarOverlay: { ...TITLE_BAR_THEMES.dark, height: TITLE_BAR_HEIGHT } }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

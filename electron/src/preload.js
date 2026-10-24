@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('kexoz', {
+  platform: process.platform,
+  setTitleBarTheme: (theme) => ipcRenderer.invoke('kexoz:set-titlebar-theme', theme),
   localRequest: (payload) => ipcRenderer.invoke('kexoz:local-request', payload),
   checkPort: (port) => ipcRenderer.invoke('kexoz:check-port', port),
   notify: (payload) => ipcRenderer.invoke('kexoz:notify', payload),

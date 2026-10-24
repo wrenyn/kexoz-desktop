@@ -44,6 +44,25 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   position: relative;
 }
 
+/* ─── DESKTOP TITLE BAR ───────────────────────────────────── */
+/* The Electron window has no native title bar. The OS draws its window buttons
+   in this band (top-right on Windows/Linux, top-left on macOS), so content
+   starts below it; the sidebar reaches up into it to keep its colour unbroken. */
+[data-frame] { --titlebar-h: 36px; }
+[data-frame] .ps-root { padding-top: var(--titlebar-h); }
+[data-frame] .ps-sidebar {
+  margin-top: calc(-1 * var(--titlebar-h));
+  padding-top: calc(16px + var(--titlebar-h));
+}
+.ps-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+  -webkit-app-region: drag;
+}
+
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
 .ps-sidebar {
   width: var(--sidebar-w);

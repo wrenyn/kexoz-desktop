@@ -14,6 +14,7 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
+    void window.kexoz?.setTitleBarTheme?.(theme)
   }, [theme])
 
   // Listen for OS preference changes (only when no manual pref is saved)
