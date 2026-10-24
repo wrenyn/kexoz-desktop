@@ -1,8 +1,6 @@
-import { useState } from 'react'
-import { LogOut, LogIn, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react'
+import { LogOut, LogIn, ChevronLeft, ChevronRight } from 'lucide-react'
 import { NAV_ITEMS, type Page } from '../../lib/navigation'
 import Logo from '../ui/Logo'
-import KeyboardShortcutsPopover from '../ui/KeyboardShortcutsPopover'
 
 type Props = {
   activePage: Page
@@ -18,8 +16,6 @@ type Props = {
 }
 
 export default function Sidebar({ activePage, onNavigate, requestCount, ownerEmail, onLogin, onLogout, collapsed, onToggleCollapse }: Props) {
-  const [showShortcuts, setShowShortcuts] = useState(false)
-
   return (
     <aside className={`ps-sidebar animate-slide-left ${collapsed ? 'ps-sidebar-collapsed' : ''}`}>
       {/* Brand */}
@@ -69,22 +65,6 @@ export default function Sidebar({ activePage, onNavigate, requestCount, ownerEma
 
       {/* Account / Auth */}
       <div className="ps-sidebar-status" style={{ position: 'relative' }}>
-        {/* Keyboard shortcuts button */}
-        <button
-          type="button"
-          className="ps-sidebar-shortcut-btn"
-          onClick={() => setShowShortcuts(v => !v)}
-          title="Keyboard shortcuts (?)"
-          aria-label="Show keyboard shortcuts"
-        >
-          <Keyboard size={13} />
-          {!collapsed && <span style={{ fontSize: 11, color: 'var(--text-soft)' }}>Shortcuts</span>}
-        </button>
-
-        {showShortcuts && (
-          <KeyboardShortcutsPopover onClose={() => setShowShortcuts(false)} />
-        )}
-
         {ownerEmail ? (
           <div style={{ padding: '0 2px' }}>
             {!collapsed && (

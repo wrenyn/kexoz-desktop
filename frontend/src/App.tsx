@@ -749,16 +749,6 @@ export default function App() {
     window.setTimeout(() => setCopyFeedback('idle'), 1800)
   }
 
-  const handleCopyClientId = async () => {
-    if (!session) return
-    try {
-      await navigator.clipboard.writeText(session.id)
-      toast.success('Client ID copied to clipboard')
-    } catch {
-      toast.error('Could not copy Client ID')
-    }
-  }
-
   const handleLogout = () => {
     clearClientId()
     window.location.reload()
@@ -941,13 +931,11 @@ export default function App() {
                 session={session}
                 onVerify={() => void startGoogleVerify()}
                 onUpgrade={() => void handleUpgrade()}
-                onCopyClientId={() => void handleCopyClientId()}
                 tunnels={persistentTunnels}
                 onExportTunnels={exportTunnelConfiguration}
                 onImportTunnels={(file) => void importTunnelConfiguration(file)}
                 verifying={verifying}
                 gauthEnabled={gauthEnabled}
-                portInput={portInput}
               />
             )}
 
