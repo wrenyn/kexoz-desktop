@@ -1,14 +1,24 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { QUICK_PORTS } from '../../lib/storage'
-import { ROOT_DOMAIN, type ShareAccess, type SharePermissions, type TunnelType } from '../../lib/api'
-import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, parseExcludes, type FolderInfo, type NewShareRequest } from '../../lib/shares'
+import { ROOT_DOMAIN, type Project, type ShareAccess, type SharePermissions, type TunnelType } from '../../lib/api'
+import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, parseExcludes, projectNameError, type FolderInfo, type NewShareRequest } from '../../lib/shares'
 import { usePortScanner } from '../../hooks/usePortScanner'
 
 const MIN_PASSWORD = 4
+const NEW_PROJECT = '__new__'
+
+export type AddressOption = {
+  name: string
+  /** Labels of the shares already on this address. */
+  usedBy: string[]
+}
+
 type Props = {
   onClose: () => void
-  /** Addresses the user owns that no other share is using. */
-  addresses: string[]
+  addresses: AddressOption[]
+  projects: Project[]
+  /** Project to put the share in, when opened from a project. */
+  defaultProjectId?: string
   onManageAddresses: () => void
   onSubmit: (request: NewShareRequest) => void | Promise<void>
 }
@@ -109,9 +119,12 @@ function Field({ label, htmlFor, aside, help, error, children }: {
   )
 }
 
-export default function NewShareModal({ onClose, onSubmit, addresses, onManageAddresses }: Props) {
+export default function NewShareModal({ onClose, onSubmit, addresses, projects, defaultProjectId, onManageAddresses }: Props) {
   const [kind, setKind] = useState<Kind | null>(null)
-  const [address, setAddress] = useState(addresses[0] ?? '')
+  const [address, setAddress] = useState((addresses.find(option => option.usedBy.length === 0) ?? addresses[0])?.name ?? '')
+  const [name, setName] = useState('')
+  const [projectChoice, setProjectChoice] = useState(projects.some(project => project.id === defaultProjectId) ? defaultProjectId ?? '' : '')
+  const [newProjectName, setNewProjectName] = useState('')
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<Protocol>('web')
   const [endToEnd, setEndToEnd] = useState(false)
@@ -179,8 +192,11 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
   const duration = expiry === 'custom'
     ? `${customMinutes}m`
     : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
+  const projectError = projectChoice === NEW_PROJECT ? projectNameError(newProjectName) : ''
   const hiddenError = expiryError
-  const firstError = addressError || portError || folderError || passwordError || hiddenError
+  const firstError = addressError || portError || folderError || passwordError || projectError || hiddenError
+  const sharedWith = addresses.find(option => option.name === address)?.usedBy ?? []
+  const detectedLabel = kind === 'port' ? detectedPorts.find(detected => detected.port === portNumber)?.label : undefined
   const show = (error: string) => (attempted ? error : '')
 
   const pickKind = (next: Kind) => {
@@ -235,7 +251,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
     if (!kind) return
     setAttempted(true)
     if (firstError) {
-      if (hiddenError && !(addressError || portError || folderError || passwordError)) setMoreOpen(true)
+      if (hiddenError && !(addressError || portError || folderError || passwordError || projectError)) setMoreOpen(true)
       requestAnimationFrame(() => {
         modalRef.current?.querySelector('.ps-ns-error')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       })
@@ -257,6 +273,9 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
           root: folder.path,
           excludes: parseExcludes(excludesText),
         } : undefined,
+        name: name.trim() || undefined,
+        projectId: projectChoice === NEW_PROJECT ? undefined : projectChoice || undefined,
+        newProjectName: projectChoice === NEW_PROJECT ? newProjectName.trim().replace(/\s+/g, ' ') : undefined,
       })
     } finally {
       setSubmitting(false)
@@ -394,6 +413,9 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
       htmlFor="new-share-address"
       aside={<button type="button" className="ps-ns-link" onClick={onManageAddresses}>Manage addresses</button>}
       error={addresses.length > 0 ? show(addressError) : undefined}
+      help={sharedWith.length > 0
+        ? `${sharedWith.join(', ')} ${sharedWith.length === 1 ? 'uses' : 'use'} this address too. Only one share runs on it at a time, so starting this one pauses whichever is running.`
+        : undefined}
     >
       {addresses.length > 0 ? (
         <div className="ps-input-group">
@@ -404,18 +426,60 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
             value={address}
             onChange={e => setAddress(e.target.value)}
           >
-            {addresses.map(name => (
-              <option key={name} value={name}>{name}.{ROOT_DOMAIN}</option>
+            {addresses.map(option => (
+              <option key={option.name} value={option.name}>
+                {option.name}.{ROOT_DOMAIN}{option.usedBy.length > 0 ? ' (in use)' : ''}
+              </option>
             ))}
           </select>
         </div>
       ) : (
         <div className="ps-ns-notice">
-          <span>All of your addresses are in use. Stop using one, or add another on the Domains page.</span>
+          <span>You don’t have an address yet. Add one on the Domains page.</span>
           <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onManageAddresses}>Domains</button>
         </div>
       )}
     </Field>
+  )
+
+  const organizeFields = (
+    <div className="ps-ns-row">
+      <Field label="Name" htmlFor="new-share-name">
+        <input
+          id="new-share-name"
+          className="ps-input"
+          value={name}
+          maxLength={60}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={onEnter}
+          placeholder={detectedLabel ? `Like ${detectedLabel}` : kind === 'folder' ? 'Like Design files' : 'Like Frontend'}
+        />
+      </Field>
+      <Field label="Project" htmlFor="new-share-project" error={show(projectError)}>
+        <select
+          id="new-share-project"
+          className="ps-ns-select ps-ns-select-boxed"
+          value={projectChoice}
+          onChange={e => setProjectChoice(e.target.value)}
+        >
+          <option value="">No project</option>
+          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+          <option value={NEW_PROJECT}>New project…</option>
+        </select>
+        {projectChoice === NEW_PROJECT && (
+          <input
+            className="ps-input"
+            value={newProjectName}
+            onChange={e => setNewProjectName(e.target.value)}
+            onKeyDown={onEnter}
+            placeholder="Project name"
+            aria-label="New project name"
+            aria-invalid={attempted && Boolean(projectError)}
+            autoFocus
+          />
+        )}
+      </Field>
+    </div>
   )
 
   return (
@@ -479,6 +543,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                     </div>
                   )}
                   {needsAddress && addressField}
+                  {organizeFields}
                   {accessFields}
                   {isWeb && (
                     <div className="ps-ns-toggles">
@@ -497,6 +562,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                 <>
                   {portField('Terminal port', '7681', 'The port your terminal server listens on. ttyd uses 7681.')}
                   {addressField}
+                  {organizeFields}
                   {accessFields}
                   <div className="ps-ns-toggles">
                     <ToggleRow title="View only" desc="Visitors can watch but can’t type." checked={viewOnly} onChange={setViewOnly} />
@@ -531,6 +597,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                     </div>
                   )}
                   {addressField}
+                  {organizeFields}
                   <Field label="Visitors can">
                     <Segmented
                       label="Visitors can"

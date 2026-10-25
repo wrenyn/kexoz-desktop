@@ -1914,24 +1914,31 @@ a.ps-btn { text-decoration: none; }
 .ps-feedback-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--text-soft); }
 .ps-feedback-actions { display: flex; gap: 6px; }
 
-/* Projects */
-.ps-projects { display: flex; flex-direction: column; gap: 12px; }
+/* Projects on the Shares page */
+.ps-groups { display: flex; flex-direction: column; gap: 12px; }
+.ps-group { padding: 0; overflow: hidden; }
+.ps-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 10px 16px; border-bottom: 1px solid var(--border); }
+.ps-group-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ps-group-name { font-size: 14px; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-group-meta { font-size: 11.5px; color: var(--text-soft); white-space: nowrap; }
+.ps-group-command { padding: 0; border: none; background: none; font-family: var(--mono-font); font-size: 11px; color: var(--text-soft); cursor: pointer; }
+.ps-group-command:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.ps-group-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; }
+.ps-group-empty { margin: 0; padding: 14px 16px; font-size: 12.5px; color: var(--text-soft); }
+.ps-groups-tip { margin: 2px 4px 0; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
+.ps-link-btn { padding: 0; border: none; background: none; font: inherit; color: var(--text-muted); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ps-link-btn:hover { color: var(--text); }
+.ps-ns-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.ps-ns-select-boxed,
+.ps-panel-select { flex: none; width: 100%; padding: 8px 30px 8px 11px; border: 1px solid var(--border-bright); border-radius: var(--radius-sm); background-color: var(--bg-input); font-family: var(--sans-font); font-size: 13px; }
+.ps-ns-select-boxed:focus,
+.ps-panel-select:focus { border-color: var(--accent-border); box-shadow: var(--shadow-accent); }
+.ps-panel-select { max-width: 280px; }
 .ps-project-editor { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
 .ps-project-picks { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .ps-project-picks .ps-check { font-size: 12.5px; color: var(--text); }
 .ps-project-pick-meta { color: var(--text-soft); }
 .ps-project-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.ps-project { padding: 0; overflow: hidden; }
-.ps-project-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.ps-project-name { font-size: 14px; font-weight: 600; color: var(--text-strong); }
-.ps-project-command { margin-top: 3px; padding: 0; border: none; background: none; font-family: var(--mono-font); font-size: 11.5px; color: var(--text-soft); cursor: pointer; }
-.ps-project-command:hover { color: var(--text); }
-.ps-project-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.ps-project-shares { list-style: none; margin: 0; padding: 0; }
-.ps-project-shares li { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 12.5px; }
-.ps-project-shares li + li { border-top: 1px solid var(--border); }
-.ps-project-share-name { color: var(--text); font-weight: 500; }
-.ps-project-share-meta { flex: 1; color: var(--text-soft); }
 
 /* Connection panel */
 .ps-conn-rows { display: flex; flex-direction: column; margin-top: 4px; }

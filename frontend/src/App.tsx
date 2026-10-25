@@ -8,7 +8,7 @@ import { Toaster, toast } from 'react-hot-toast'
 import axios from 'axios'
 
 import {
-  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel, type ShareAccess,
+  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel, type Project, type ShareAccess,
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, fetchClientStats,
@@ -16,7 +16,7 @@ import {
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain
 } from './lib/api'
-import { isGatedType, shareStatus, shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
+import { addressHolder, isGatedType, shareLabel, shareStatus, shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
 import { useFolderShares } from './hooks/useFolderShares'
 import { useConnectionHistory } from './hooks/useConnectionHistory'
 import { clearClientId, getClientId, setClientId } from './lib/storage'
@@ -24,7 +24,8 @@ import { normalizeSubdomain, extractError } from './lib/utils'
 import { createTunnelConnection } from './lib/tunnel'
 import { useTheme } from './hooks/useTheme'
 import { useRequestLog } from './hooks/useRequestLog'
-import { useTunnelNames } from './hooks/useTunnelNames'
+import { forgetLegacyNames, loadLegacyNames } from './lib/legacyNames'
+import { useProjects } from './hooks/useProjects'
 import { useConfirm } from './hooks/useConfirm'
 
 import AppShell from './components/layout/AppShell'
@@ -38,7 +39,6 @@ import TunnelsPage from './components/pages/TunnelsPage'
 import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
-import ProjectsPage from './components/pages/ProjectsPage'
 import NewShareModal from './components/modals/NewShareModal'
 
 const TOAST_OPTIONS = {
@@ -60,11 +60,34 @@ const TOAST_OPTIONS = {
   loading: { iconTheme: { primary: 'var(--text-muted)', secondary: 'var(--border)' } },
 }
 
+/** Moves share names that older versions kept on this computer to the account. */
+async function migrateLegacyNames(clientId: string, tunnels: PersistentTunnel[], names: Record<string, string>) {
+  const known = new Set(tunnels.map(tunnel => tunnel.id))
+  const settled = Object.keys(names).filter(id => !known.has(id))
+  for (const tunnel of tunnels) {
+    const name = names[tunnel.id]?.trim().slice(0, 60)
+    if (!name) continue
+    if (tunnel.name) {
+      settled.push(tunnel.id)
+      continue
+    }
+    try {
+      const updated = await updateTunnel(clientId, { ...tunnel, name })
+      if (updated.name) settled.push(tunnel.id)
+    } catch {
+      // Tried again on the next launch.
+    }
+  }
+  if (settled.length > 0) forgetLegacyNames(settled)
+}
+
 export default function App() {
   const [step, setStep] = useState<FlowStep>('loading')
   const [activePage, setActivePage] = useState<Page>(() => {
     // Return to the page the operator was last on after a restart.
-    const saved = window.localStorage.getItem('kexoz-active-page')
+    const stored = window.localStorage.getItem('kexoz-active-page')
+    // Projects now live on the Shares page.
+    const saved = stored === 'projects' ? 'tunnels' : stored
     return (NAV_ITEMS.some(item => item.id === saved) ? saved : 'dashboard') as Page
   })
   const [session, setSession] = useState<ClientSession | null>(null)
@@ -84,6 +107,7 @@ export default function App() {
   const [gauthEnabled, setGauthEnabled] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [showNewTunnel, setShowNewTunnel] = useState(false)
+  const [newShareProject, setNewShareProject] = useState<string | undefined>(undefined)
   const [persistentTunnels, setPersistentTunnels] = useState<PersistentTunnel[]>([])
   const [selectedTunnelId, setSelectedTunnelId] = useState<string | null>(null)
   const [routeRules, setRouteRules] = useState<Array<{ path: string; port: number }>>(() => {
@@ -101,7 +125,7 @@ export default function App() {
   const [dailyUsage, setDailyUsage] = useState<import('./lib/api').UsagePoint[]>([])
   const { theme, toggleTheme } = useTheme()
   const { requestLog, totalRequests, retention, setRetention, addLogEntry, clearLog } = useRequestLog()
-  const { names: tunnelNames, setName: onRenameTunnel } = useTunnelNames()
+  const projectsApi = useProjects(session?.id)
   const { confirm, dialog: confirmDialog } = useConfirm()
   const { events: connectionEvents, record: recordConnection } = useConnectionHistory()
 
@@ -115,6 +139,7 @@ export default function App() {
       if (event.key.toLowerCase() === 'n') {
         event.preventDefault()
         setActivePage('tunnels')
+        setNewShareProject(undefined)
         setShowNewTunnel(true)
         return
       }
@@ -362,7 +387,9 @@ export default function App() {
       setSession(nextSession)
       const savedTunnels = await listTunnels(nextSession.id).catch(() => [])
       const selected = savedTunnels.find(tunnel => tunnel.active) ?? savedTunnels[0]
-      setPersistentTunnels(savedTunnels)
+      const legacyNames = loadLegacyNames()
+      setPersistentTunnels(savedTunnels.map(tunnel => tunnel.name || !legacyNames[tunnel.id] ? tunnel : { ...tunnel, name: legacyNames[tunnel.id] }))
+      if (Object.keys(legacyNames).length > 0) void migrateLegacyNames(nextSession.id, savedTunnels, legacyNames)
       setSelectedTunnelId(selected?.id ?? null)
       const selectedPort = selected?.port ?? nextSession.port
       const selectedRoutes = selected?.pathRoutes?.length ? selected.pathRoutes : nextSession.pathRoutes
@@ -597,8 +624,30 @@ export default function App() {
     void checkListening(tunnel.tunnelType === 'folder' ? null : tunnel.port)
   }
 
-  const startPersistentTunnel = async (tunnel: PersistentTunnel, folder?: FolderShareConfig) => {
+  /** Asks before a share takes an address another running share is serving. */
+  const confirmSwitch = async (tunnel: PersistentTunnel): Promise<boolean> => {
+    const holder = addressHolder(persistentTunnelsRef.current, tunnel)
+    if (!holder) return true
+    return confirm({
+      title: 'Switch this address?',
+      message: <>{shareLabel(holder)} is running on <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong>. Switch the address to {shareLabel(tunnel)}? {shareLabel(holder)} is paused until you resume it.</>,
+      confirmLabel: 'Switch',
+    })
+  }
+
+  /** The server pauses whichever share gave up its address, so reload the list. */
+  const refreshTunnels = async () => {
     if (!session) return
+    const fresh = await listTunnels(session.id).catch(() => null)
+    if (fresh) setPersistentTunnels(current => fresh.map(tunnel => ({ ...tunnel, name: tunnel.name || current.find(item => item.id === tunnel.id)?.name })))
+  }
+
+  type RunOptions = { switchConfirmed?: boolean; quiet?: boolean }
+
+  const startPersistentTunnel = async (tunnel: PersistentTunnel, folder?: FolderShareConfig, options: RunOptions = {}): Promise<boolean> => {
+    if (!session) return false
+    const holder = addressHolder(persistentTunnelsRef.current, tunnel)
+    if (holder && !options.switchConfirmed && !await confirmSwitch(tunnel)) return false
     setIsBusy(true)
     try {
       selectPersistentTunnel(tunnel)
@@ -611,15 +660,22 @@ export default function App() {
         setPersistentTunnels(current => current.map(item => item.id === reverted.id ? reverted : item))
         throw err
       }
-      toast.success(`Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}`)
+      if (holder) await refreshTunnels()
+      if (!options.quiet) {
+        toast.success(holder
+          ? `Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}. ${shareLabel(holder)} is paused.`
+          : `Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}`)
+      }
+      return true
     } catch (err) {
       toast.error(extractError(err))
+      return false
     } finally {
       setIsBusy(false)
     }
   }
 
-  const stopPersistentTunnel = async (tunnel: PersistentTunnel) => {
+  const stopPersistentTunnel = async (tunnel: PersistentTunnel, options: RunOptions = {}) => {
     if (!session) return
     setIsBusy(true)
     try {
@@ -627,7 +683,7 @@ export default function App() {
       setPersistentTunnels(current => current.map(item => item.id === tunnel.id ? { ...item, active: false, status: item.status === 'active' ? 'stopped' : item.status } : item))
       disconnectShare(tunnel)
       if (tunnel.id === selectedTunnelId) tunnelClose.current = null
-      toast.success(`Stopped ${shareUrl(tunnel).replace(/^https:\/\//, '')}`)
+      if (!options.quiet) toast.success(`Stopped ${shareUrl(tunnel).replace(/^https:\/\//, '')}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -664,18 +720,145 @@ export default function App() {
     }
   }
 
-  const setPersistentTunnelPaused = async (tunnel: PersistentTunnel, paused: boolean) => {
-    if (!session) return
+  const setPersistentTunnelPaused = async (tunnel: PersistentTunnel, paused: boolean, options: RunOptions = {}): Promise<boolean> => {
+    if (!session) return false
+    const holder = !paused && tunnel.active ? addressHolder(persistentTunnelsRef.current, tunnel) : undefined
+    if (holder && !options.switchConfirmed && !await confirmSwitch(tunnel)) return false
     setIsBusy(true)
     try {
       const updated = await setTunnelPaused(session.id, tunnel.id, paused)
       setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
-      toast.success(paused ? 'Paused. Visitors see a “paused” page for now.' : 'Resumed. Visitors can open the link again.')
+      if (holder) await refreshTunnels()
+      if (!options.quiet) {
+        toast.success(paused ? 'Paused. Visitors see a “paused” page for now.'
+          : holder ? `Resumed. ${shareLabel(holder)} is paused.`
+          : 'Resumed. Visitors can open the link again.')
+      }
+      return true
     } catch (err) {
       toast.error(extractError(err))
+      return false
     } finally {
       setIsBusy(false)
     }
+  }
+
+  const renameTunnel = async (tunnel: PersistentTunnel, name: string) => {
+    if (!session) return
+    try {
+      const updated = await updateTunnel(session.id, { ...tunnel, name: name.trim() })
+      setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
+      forgetLegacyNames([tunnel.id])
+    } catch (err) {
+      toast.error(extractError(err))
+    }
+  }
+
+  const moveShare = async (tunnel: PersistentTunnel, projectId: string) => {
+    try {
+      await projectsApi.move(tunnel.id, projectId)
+      const project = projectsApi.projects.find(item => item.id === projectId)
+      toast.success(project ? `Moved to ${project.name}` : 'Removed from its project')
+    } catch (err) {
+      toast.error(extractError(err))
+    }
+  }
+
+  const createProject = async (name: string, tunnelIds: string[]): Promise<boolean> => {
+    try {
+      await projectsApi.create(name, tunnelIds)
+      toast.success(`Created ${name}`)
+      return true
+    } catch (err) {
+      toast.error(extractError(err))
+      return false
+    }
+  }
+
+  const saveProject = async (project: Project, name: string, tunnelIds: string[]): Promise<boolean> => {
+    try {
+      await projectsApi.save(project, name, tunnelIds)
+      toast.success('Project saved')
+      return true
+    } catch (err) {
+      toast.error(extractError(err))
+      return false
+    }
+  }
+
+  const removeProject = async (project: Project): Promise<boolean> => {
+    const accepted = await confirm({
+      title: `Delete ${project.name}?`,
+      message: <>Its shares keep running and move to <strong>Not in a project</strong>. <code>kexoz start {project.name}</code> stops working.</>,
+      confirmLabel: 'Delete project',
+      tone: 'danger',
+    })
+    if (!accepted) return false
+    try {
+      await projectsApi.remove(project)
+      toast.success(`Deleted ${project.name}`)
+      return true
+    } catch (err) {
+      toast.error(extractError(err))
+      return false
+    }
+  }
+
+  const projectShares = (project: Project) =>
+    project.tunnelIds
+      .map(id => persistentTunnelsRef.current.find(tunnel => tunnel.id === id))
+      .filter((tunnel): tunnel is PersistentTunnel => Boolean(tunnel))
+
+  const startProject = async (project: Project) => {
+    const shares = projectShares(project)
+    // Only one share serves an address, so start the first of each.
+    const claimed = new Set(shares.filter(tunnel => tunnel.active && !tunnel.paused).map(tunnel => tunnel.subdomain).filter(Boolean))
+    const pending: PersistentTunnel[] = []
+    const skipped: PersistentTunnel[] = []
+    for (const tunnel of shares) {
+      if ((tunnel.active && !tunnel.paused) || shareStatus(tunnel) === 'expired') continue
+      if (tunnel.subdomain && claimed.has(tunnel.subdomain)) {
+        skipped.push(tunnel)
+        continue
+      }
+      if (tunnel.subdomain) claimed.add(tunnel.subdomain)
+      pending.push(tunnel)
+    }
+    const taken = pending.flatMap(tunnel => {
+      const holder = addressHolder(persistentTunnelsRef.current, tunnel)
+      return holder && !project.tunnelIds.includes(holder.id) ? [holder] : []
+    })
+    if (taken.length > 0) {
+      const accepted = await confirm({
+        title: 'Switch addresses to this project?',
+        message: <>{[...new Set(taken.map(shareLabel))].join(', ')} {taken.length === 1 ? 'is' : 'are'} running on an address this project uses. Starting {project.name} pauses {taken.length === 1 ? 'it' : 'them'}.</>,
+        confirmLabel: 'Switch and start',
+      })
+      if (!accepted) return
+    }
+    let started = 0
+    for (const tunnel of pending) {
+      let ok = true
+      if (tunnel.paused) ok = await setPersistentTunnelPaused(tunnel, false, { switchConfirmed: true, quiet: true })
+      if (ok && !tunnel.active) ok = await startPersistentTunnel({ ...tunnel, paused: false }, undefined, { switchConfirmed: true, quiet: true })
+      if (ok) started += 1
+    }
+    if (taken.length > 0) await refreshTunnels()
+    if (started > 0) toast.success(started === pending.length ? `${project.name} is running` : `Started ${started} of ${pending.length} shares in ${project.name}`)
+    if (skipped.length > 0) {
+      toast(`${skipped.map(shareLabel).join(', ')} ${skipped.length === 1 ? 'uses' : 'use'} the same address as another share in ${project.name}, so ${skipped.length === 1 ? 'it' : 'they'} stayed off. Give ${skipped.length === 1 ? 'it' : 'each'} its own address to run them together.`, { duration: 7000 })
+    }
+  }
+
+  const stopProject = async (project: Project) => {
+    const running = projectShares(project).filter(tunnel => tunnel.active)
+    for (const tunnel of running) await stopPersistentTunnel(tunnel, { quiet: true })
+    if (running.length > 0) toast.success(`Stopped ${project.name}`)
+  }
+
+  const openNewShare = (projectId?: string) => {
+    setNewShareProject(projectId)
+    setShowNewTunnel(true)
   }
 
   const createShare = async (request: NewShareRequest) => {
@@ -685,7 +868,12 @@ export default function App() {
       const isFolder = request.tunnelType === 'folder'
       // Folder shares get their real port from the local file server at start.
       const port = isFolder ? 1 : request.port
+      const newProject = request.newProjectName?.toLowerCase()
+      const reused = newProject ? projectsApi.projects.find(project => project.name.toLowerCase() === newProject) : undefined
+      const projectId = reused?.id ?? (request.newProjectName ? await projectsApi.create(request.newProjectName) : request.projectId)
       const created = await createTunnel(session.id, {
+        name: request.name,
+        projectId: projectId || undefined,
         subdomain: name,
         customDomain: '',
         port,
@@ -701,7 +889,8 @@ export default function App() {
       if (request.folder) setFolder(created.id, request.folder)
       setPersistentTunnels(current => [...current, created])
       setShowNewTunnel(false)
-      await startPersistentTunnel(created, request.folder)
+      if (projectId) void projectsApi.refresh()
+      await startPersistentTunnel(created, request.folder, { switchConfirmed: true })
     } catch (err) {
       toast.error(extractError(err))
     }
@@ -745,8 +934,10 @@ export default function App() {
     setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
   }
 
-  const usedAddresses = new Set(persistentTunnels.map(tunnel => tunnel.subdomain))
-  const freeAddresses = (session?.domains ?? []).filter(name => !usedAddresses.has(name))
+  const addressOptions = (session?.domains ?? []).map(name => ({
+    name,
+    usedBy: persistentTunnels.filter(tunnel => tunnel.subdomain === name).map(shareLabel),
+  }))
 
   const handleLogout = async () => {
     const accepted = await confirm({
@@ -766,7 +957,9 @@ export default function App() {
       {showNewTunnel && session && (
         <NewShareModal
           onClose={() => setShowNewTunnel(false)}
-          addresses={freeAddresses}
+          addresses={addressOptions}
+          projects={projectsApi.projects}
+          defaultProjectId={newShareProject}
           onManageAddresses={() => { setShowNewTunnel(false); setActivePage('domains') }}
           onSubmit={createShare}
         />
@@ -777,7 +970,7 @@ export default function App() {
           <Sidebar
             activePage={activePage}
             onNavigate={setActivePage}
-            onNewShare={() => setShowNewTunnel(true)}
+            onNewShare={() => openNewShare()}
             session={session}
             liveShares={persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length}
             shareCount={persistentTunnels.length}
@@ -825,20 +1018,9 @@ export default function App() {
                 bytesOut={bytesOut}
                 dailyUsage={dailyUsage}
                 connectionEvents={connectionEvents}
-                onNewShare={() => setShowNewTunnel(true)}
+                onNewShare={() => openNewShare()}
                 onViewRequests={() => setActivePage('requests')}
                 onViewShares={() => setActivePage('tunnels')}
-              />
-            )}
-
-            {activePage === 'projects' && (
-              <ProjectsPage
-                clientId={session.id}
-                tunnels={persistentTunnels}
-                tunnelNames={tunnelNames}
-                isBusy={isBusy}
-                onStartTunnel={startPersistentTunnel}
-                onStopTunnel={stopPersistentTunnel}
               />
             )}
 
@@ -860,12 +1042,19 @@ export default function App() {
                 onPauseTunnel={(tunnel, paused) => void setPersistentTunnelPaused(tunnel, paused)}
                 folderShares={folderShares}
                 portListening={portListening}
-                onNewTunnel={() => setShowNewTunnel(true)}
+                onNewTunnel={openNewShare}
                 onAccessChange={handleAccessChange}
-                tunnelNames={tunnelNames}
-                onRenameTunnel={onRenameTunnel}
+                onRenameTunnel={(tunnel, name) => void renameTunnel(tunnel, name)}
                 clientId={session.id}
                 onTunnelUpdated={handleTunnelUpdated}
+                projects={projectsApi.projects}
+                projectsLoaded={projectsApi.loaded}
+                onCreateProject={createProject}
+                onSaveProject={saveProject}
+                onDeleteProject={removeProject}
+                onMoveShare={(tunnel, projectId) => void moveShare(tunnel, projectId)}
+                onStartProject={project => void startProject(project)}
+                onStopProject={project => void stopProject(project)}
               />
             )}
 
@@ -884,7 +1073,6 @@ export default function App() {
               <DomainsPage
                 session={session}
                 tunnels={persistentTunnels}
-                tunnelNames={tunnelNames}
                 onAddAddress={handleAddAddress}
                 onRemoveAddress={(name) => void handleRemoveAddress(name)}
                 domainInput={domainInput}

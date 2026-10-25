@@ -54,6 +54,8 @@ export type ShareStatus = 'active' | 'stopped' | 'paused' | 'expired'
 
 export type PersistentTunnel = {
   id: string
+  /** The owner's label; empty means show the address. */
+  name?: string
   subdomain: string
   customDomain: string
   port: number
@@ -253,7 +255,7 @@ export const listTunnels = async (clientId: string): Promise<PersistentTunnel[]>
   return data.tunnels ?? []
 }
 
-export const createTunnel = async (clientId: string, tunnel: NewTunnelInput): Promise<PersistentTunnel> => {
+export const createTunnel = async (clientId: string, tunnel: NewTunnelInput & { projectId?: string }): Promise<PersistentTunnel> => {
   const { data } = await axios.post<PersistentTunnel>(`${API_BASE_URL}/client/tunnels`, { clientId, ...tunnel })
   return data
 }
@@ -305,8 +307,17 @@ export const listProjects = async (clientId: string): Promise<Project[]> => {
 
 type ProjectsResponse = { projects: Project[] | null }
 
-export const createProject = async (clientId: string, name: string, tunnelIds: string[]): Promise<Project[]> => {
-  const { data } = await axios.post<ProjectsResponse>(`${API_BASE_URL}/client/projects`, { clientId, name, tunnelIds }, { params: { clientId } })
+export const createProject = async (clientId: string, name: string, tunnelIds: string[]): Promise<{ projects: Project[]; projectId: string }> => {
+  const { data } = await axios.post<ProjectsResponse & { projectId?: string }>(`${API_BASE_URL}/client/projects`, { clientId, name, tunnelIds }, { params: { clientId } })
+  const projects = data.projects ?? []
+  // Older servers don't return the id, so find the new project by name.
+  const projectId = data.projectId ?? projects.find(project => project.name.toLowerCase() === name.toLowerCase())?.id ?? ''
+  return { projects, projectId }
+}
+
+/** Moves a share into a project, or out of every project when projectId is empty. */
+export const setTunnelProject = async (clientId: string, tunnelId: string, projectId: string): Promise<Project[]> => {
+  const { data } = await axios.put<ProjectsResponse>(`${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/project`, { clientId, projectId }, { params: { clientId } })
   return data.projects ?? []
 }
 

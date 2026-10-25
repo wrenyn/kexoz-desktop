@@ -6,7 +6,6 @@ import { normalizeSubdomain } from '../../lib/utils'
 type Props = {
   session: ClientSession | null
   tunnels: PersistentTunnel[]
-  tunnelNames: Record<string, string>
   onAddAddress: (name: string) => Promise<boolean>
   onRemoveAddress: (name: string) => void
   domainInput: string
@@ -18,7 +17,7 @@ type Props = {
 const ADDRESS_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/
 
 export default function DomainsPage({
-  session, tunnels, tunnelNames, onAddAddress, onRemoveAddress,
+  session, tunnels, onAddAddress, onRemoveAddress,
   domainInput, setDomainInput, onDomainSubmit, isBusy,
 }: Props) {
   const [showAddCustom, setShowAddCustom] = useState(false)
@@ -30,7 +29,12 @@ export default function DomainsPage({
   const isPro = tier === 'pro' || tier === 'pro_plus'
   const addresses = session?.domains ?? []
 
-  const shareUsing = (name: string) => tunnels.find(tunnel => tunnel.subdomain === name)
+  /** Shares on an address, the one serving it first. */
+  const sharesUsing = (name: string) => tunnels
+    .filter(tunnel => tunnel.subdomain === name)
+    .sort((a, b) => Number(b.active && !b.paused) - Number(a.active && !a.paused))
+  const describe = (share: PersistentTunnel) =>
+    share.name?.trim() || (share.tunnelType === 'folder' ? 'a folder share' : `localhost:${share.port}`)
 
   const copyLink = (host: string) => {
     void navigator.clipboard.writeText(`https://${host}`).then(() => {
@@ -103,14 +107,15 @@ export default function DomainsPage({
           ) : (
             addresses.map(name => {
               const host = `${name}.${ROOT_DOMAIN}`
-              const share = shareUsing(name)
+              const shares = sharesUsing(name)
+              const share = shares[0]
               return (
                 <div key={name} className="ps-domain-item">
                   <div className="ps-domain-info">
                     <div className="ps-domain-name">{host}</div>
                     <div className="ps-domain-sub">
                       {share
-                        ? `Used by ${tunnelNames[share.id] || (share.tunnelType === 'folder' ? 'a folder share' : `localhost:${share.port}`)}`
+                        ? `Used by ${describe(share)}${shares.length > 1 ? ` and ${shares.length - 1} more` : ''}`
                         : 'Not used by any share'}
                     </div>
                   </div>

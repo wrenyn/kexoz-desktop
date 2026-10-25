@@ -28,6 +28,11 @@ export type NewShareRequest = {
   duration?: string
   folder?: FolderShareConfig
   preview?: boolean
+  name?: string
+  /** An existing project, or empty for none. */
+  projectId?: string
+  /** Set instead of projectId to create a project for the share. */
+  newProjectName?: string
 }
 
 export const DEFAULT_FOLDER_EXCLUDES = ['.git', 'node_modules']
@@ -61,6 +66,26 @@ export const shareUrl = (tunnel: PersistentTunnel): string => {
   }
   return `https://${shareHost(tunnel)}`
 }
+
+/** The address without the scheme, as people read it. */
+export const shareAddress = (tunnel: PersistentTunnel): string =>
+  tunnel.subdomain ? `${tunnel.subdomain}.${ROOT_DOMAIN}` : shareUrl(tunnel).replace(/^\w+:\/\//, '')
+
+/** What to call a share: its name, else its address. */
+export const shareLabel = (tunnel: PersistentTunnel): string => tunnel.name?.trim() || shareAddress(tunnel)
+
+/** The other running share serving this share's address, if any. */
+export const addressHolder = (tunnels: PersistentTunnel[], tunnel: PersistentTunnel): PersistentTunnel | undefined =>
+  tunnel.subdomain
+    ? tunnels.find(other => other.id !== tunnel.id && other.subdomain === tunnel.subdomain && other.active && !other.paused)
+    : undefined
+
+export const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/
+
+export const projectNameError = (name: string): string =>
+  !name.trim() ? 'Give the project a name.'
+    : !PROJECT_NAME_PATTERN.test(name.trim().replace(/\s+/g, ' ')) ? 'Use up to 40 letters, numbers, spaces, dashes or underscores.'
+    : ''
 
 /** Falls back to the same rule the server uses for records from older servers. */
 export const shareAccess = (tunnel: PersistentTunnel): ShareAccess => {

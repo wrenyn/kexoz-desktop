@@ -384,11 +384,12 @@ ipcMain.handle('kexoz:update-tray', async (event, tunnels) => {
   
   if (tunnels && tunnels.length > 0) {
     menuItems.push({ type: 'separator' });
-    menuItems.push({ label: 'Saved Tunnels', enabled: false });
+    menuItems.push({ label: 'Shares', enabled: false });
     tunnels.forEach(t => {
       const isRunning = activeTunnel && currentConfig && currentConfig.port === t.port;
+      const name = typeof t.name === 'string' ? t.name.trim().slice(0, 60) : '';
       menuItems.push({
-        label: `${t.subdomain} (:${t.port})`,
+        label: name ? `${name} (${t.subdomain})` : `${t.subdomain} (:${t.port})`,
         icon: isRunning ? nativeImage.createFromPath(path.join(__dirname, '../assets/green-dot.png')) : undefined,
         submenu: [
           { label: 'Copy URL', click: () => { 
