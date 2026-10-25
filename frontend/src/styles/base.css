@@ -1386,7 +1386,7 @@ a.ps-btn { text-decoration: none; }
 .ps-share-run { min-width: 64px; }
 
 /* ─── SHARE PANEL ────────────────────────────────────────────── */
-.ps-panel-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.25); animation: fadeIn 0.15s ease; }
+.ps-panel-backdrop { position: fixed; inset: var(--titlebar-h, 0px) 0 0; z-index: 40; background: rgba(0, 0, 0, 0.25); animation: fadeIn 0.15s ease; }
 [data-theme="light"] .ps-panel-backdrop { background: rgba(32, 35, 34, 0.12); }
 .ps-panel {
   position: fixed; top: var(--titlebar-h, 0px); right: 0; bottom: 0; z-index: 41;

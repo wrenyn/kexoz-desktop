@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PersistentTunnel, ShareAccess } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, isGatedType, shareAccess, shareAddress, shareLabel, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
@@ -187,7 +188,8 @@ function SharePanel(props: ShareControls & { tunnel: PersistentTunnel; onClose: 
     access === 'public' ? 'Anyone who has the link can open it.' :
     'Visitors type the password once, then the share opens.'
 
-  return (
+  // Page content animates with a transform, which would pin a fixed panel inside it.
+  return createPortal(
     <>
       <div className="ps-panel-backdrop" onClick={onClose} />
       <aside className="ps-panel" role="dialog" aria-modal="false" aria-label={`Share ${name || shareAddress(tunnel)}`}>
@@ -316,7 +318,8 @@ function SharePanel(props: ShareControls & { tunnel: PersistentTunnel; onClose: 
           </div>
         </div>
       </aside>
-    </>
+    </>,
+    document.body,
   )
 }
 
