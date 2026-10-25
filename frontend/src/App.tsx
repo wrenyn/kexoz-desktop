@@ -125,27 +125,55 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  const prevConnState = useRef<ConnectionState>('idle')
+  // Short blips reconnect on their own, so only speak up if the link stays down.
+  const wasConnected = useRef(false)
+  const lostToastTimer = useRef<number | null>(null)
+  const lostToastShown = useRef(false)
   useEffect(() => {
-    const prev = prevConnState.current
-    prevConnState.current = connState
-    if (prev === 'connected' && connState === 'disconnected') {
-      toast.loading('Connection lost. Reconnecting…', { id: 'conn-state', duration: Infinity })
-    } else if (prev === 'disconnected' && connState === 'connected') {
-      toast.success('Back online', { id: 'conn-state', duration: 3000 })
-    } else if (prev === 'connecting' && connState === 'connected' && step === 'dashboard') {
-      // Already connected for first time - no toast needed, UI shows it
-      toast.dismiss('conn-state')
+    const clearTimer = () => {
+      if (lostToastTimer.current !== null) window.clearTimeout(lostToastTimer.current)
+      lostToastTimer.current = null
     }
-  }, [connState, step])
-
+    if (connState === 'connected') {
+      clearTimer()
+      if (lostToastShown.current) toast.success('Back online', { id: 'conn-state', duration: 3000 })
+      lostToastShown.current = false
+      wasConnected.current = true
+    } else if (connState === 'idle') {
+      clearTimer()
+      if (lostToastShown.current) toast.dismiss('conn-state')
+      lostToastShown.current = false
+      wasConnected.current = false
+    } else if (wasConnected.current && !lostToastShown.current && lostToastTimer.current === null) {
+      lostToastTimer.current = window.setTimeout(() => {
+        lostToastTimer.current = null
+        lostToastShown.current = true
+        toast.loading('Connection lost. Reconnecting…', { id: 'conn-state', duration: Infinity })
+      }, 5000)
+    }
+  }, [connState])
 
   const tunnelPort = useRef<number | null>(null)
   const routesRef = useRef<Array<{ path: string; port: number }>>([])
   const tunnelClose = useRef<(() => void) | null>(null)
-  const tunnelConnections = useRef(new Map<string, { close: () => void; portRef: { current: number | null }; routesRef: { current: Array<{ path: string; port: number }> } }>())
+  const tunnelConnections = useRef(new Map<string, { close: () => void; setPort: (port: number) => void; portRef: { current: number | null }; routesRef: { current: Array<{ path: string; port: number }> } }>())
+  const connectionStates = useRef(new Map<string, ConnectionState>())
   const verifyAttempt = useRef(0)
   const lastPortListening = useRef<boolean | null>(null)
+
+  /** The status shown to the user is the worst state across every running share. */
+  const setShareState = useCallback((key: string, state: ConnectionState | null) => {
+    const states = connectionStates.current
+    if (state === null) states.delete(key)
+    else states.set(key, state)
+    const all = [...states.values()]
+    setConnState(
+      all.includes('disconnected') ? 'disconnected'
+        : all.includes('connecting') ? 'connecting'
+        : all.includes('connected') ? 'connected'
+        : 'idle',
+    )
+  }, [])
 
   const openTunnelConnection = useCallback((clientId: string, tunnelId?: string, port?: number, routes?: Array<{ path: string; port: number }>, tunnelType?: string) => {
     const key = tunnelId ?? 'legacy'
@@ -158,16 +186,19 @@ export default function App() {
       tunnelId,
       tunnelType,
       portRef,
-      onStateChange: (state, message) => {
-        setConnState(state)
-        if (message) setStatusMessage(message)
-      },
+      onStateChange: state => setShareState(key, state),
       onLogEntry: addLogEntry,
       routesRef: connectionRoutesRef,
     })
-    tunnelConnections.current.set(key, { close: tunnel.close, portRef, routesRef: connectionRoutesRef })
+    tunnelConnections.current.set(key, { close: tunnel.close, setPort: tunnel.setPort, portRef, routesRef: connectionRoutesRef })
     tunnelClose.current = tunnel.close
-  }, [addLogEntry])
+  }, [addLogEntry, setShareState])
+
+  const closeConnection = useCallback((key: string) => {
+    tunnelConnections.current.get(key)?.close()
+    tunnelConnections.current.delete(key)
+    setShareState(key, null)
+  }, [setShareState])
 
   const { folders: folderShares, setFolder, removeFolder } = useFolderShares()
   const folderSharesRef = useRef(folderShares)
@@ -193,10 +224,9 @@ export default function App() {
   }, [openTunnelConnection])
 
   const disconnectShare = useCallback((tunnel: PersistentTunnel) => {
-    tunnelConnections.current.get(tunnel.id)?.close()
-    tunnelConnections.current.delete(tunnel.id)
+    closeConnection(tunnel.id)
     if (tunnel.tunnelType === 'folder') void window.kexoz?.stopFolderServer?.(tunnel.id)
-  }, [])
+  }, [closeConnection])
 
   const publicUrl = useMemo(() => {
     if (!session?.subdomain) return ''
@@ -316,7 +346,6 @@ export default function App() {
     setLoadError('')
     setIsBusy(true)
     toast.dismiss()
-    setConnState('connecting')
 
     try {
       const storedId = getClientId()
@@ -366,7 +395,6 @@ export default function App() {
         setStep('subdomain')
       }
     } catch (error) {
-      setConnState('disconnected')
       console.error('Kexoz failed to start', error)
       setLoadError('Can’t reach Kexoz')
     } finally {
@@ -453,7 +481,10 @@ export default function App() {
       if (selectedTunnelId) {
         setPersistentTunnels(current => current.map(tunnel => tunnel.id === selectedTunnelId ? { ...tunnel, port: next } : tunnel))
         const connection = tunnelConnections.current.get(selectedTunnelId)
-        if (connection) connection.portRef.current = next
+        if (connection) {
+          connection.portRef.current = next
+          connection.setPort(next)
+        }
         const selected = persistentTunnels.find(tunnel => tunnel.id === selectedTunnelId)
         if (selected) void updateTunnel(session.id, { ...selected, port: next })
       }
@@ -595,10 +626,7 @@ export default function App() {
       await updateTunnel(session.id, { ...tunnel, active: false })
       setPersistentTunnels(current => current.map(item => item.id === tunnel.id ? { ...item, active: false, status: item.status === 'active' ? 'stopped' : item.status } : item))
       disconnectShare(tunnel)
-      if (tunnel.id === selectedTunnelId) {
-        tunnelClose.current = null
-        setConnState('idle')
-      }
+      if (tunnel.id === selectedTunnelId) tunnelClose.current = null
       toast.success(`Stopped ${tunnel.subdomain}.${ROOT_DOMAIN}`)
     } catch (err) {
       toast.error(extractError(err))
@@ -621,7 +649,6 @@ export default function App() {
       await deleteTunnel(session.id, tunnel.id)
       if (tunnel.id === selectedTunnelId) {
         tunnelClose.current = null
-        setConnState('idle')
         setSelectedTunnelId(null)
       }
       disconnectShare(tunnel)

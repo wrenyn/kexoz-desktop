@@ -37,16 +37,17 @@ declare global {
       localRequest: (payload: LocalRequestPayload) => Promise<LocalRequestResult>
       checkPort: (port: number) => Promise<boolean>
       notify: (payload: { title: string; body: string }) => Promise<boolean>
-      startTunnel?: (config: { tunnelUrl: string; tunnelType?: string; port: number }) => Promise<boolean>
-      stopTunnel?: () => Promise<boolean>
+      startTunnel?: (config: { key: string; tunnelUrl: string; tunnelType?: string; port: number }) => Promise<boolean>
+      stopTunnel?: (key: string) => Promise<boolean>
+      setTunnelPort?: (key: string, port: number) => Promise<boolean>
       updateTray?: (tunnels: import('./lib/api').PersistentTunnel[]) => Promise<boolean>
       setAutoStart?: (enabled: boolean) => Promise<boolean>
       pickFolder?: () => Promise<FolderInfo | null>
       inspectFolder?: (folder: string) => Promise<FolderInfo>
       startFolderServer?: (config: FolderServerConfig) => Promise<{ port: number }>
       stopFolderServer?: (shareId: string) => Promise<boolean>
-      onTunnelState?: (callback: (state: import('./lib/api').ConnectionState, msg?: string) => void) => void
-      onLogEntry: (callback: (entry: import('./lib/api').RequestLogEntry) => void) => void
+      onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState) => void) => () => void
+      onLogEntry: (callback: (key: string, entry: import('./lib/api').RequestLogEntry) => void) => () => void
     }
   }
 }

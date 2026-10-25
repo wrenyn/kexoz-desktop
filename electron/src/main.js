@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, protocol, net, ipcMain, Tray, Menu, nativeImage, Notification, dialog } = require('electron');
+const { app, BrowserWindow, shell, protocol, net, ipcMain, Tray, Menu, nativeImage, Notification, dialog, powerMonitor } = require('electron');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
@@ -180,37 +180,34 @@ ipcMain.handle('kexoz:stop-folder-server', async (_event, shareId) => {
   return true;
 });
 
-let activeTunnel = null;
-let currentConfig = null;
+const tunnels = new Map();
 
-ipcMain.handle('kexoz:start-tunnel', async (event, config) => {
-  if (activeTunnel) {
-    activeTunnel.close();
-  }
-  currentConfig = config;
-  activeTunnel = connectTunnel({
+const sendToWindow = (channel, ...args) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
+};
+
+ipcMain.handle('kexoz:start-tunnel', async (_event, config) => {
+  const key = config.key || 'legacy';
+  tunnels.get(key)?.close();
+  tunnels.set(key, connectTunnel({
     tunnelUrl: config.tunnelUrl,
     tunnelType: config.tunnelType,
-    getPort: () => config.port,
-    onStateChange: (state, msg) => {
-      if (mainWindow) {
-        mainWindow.webContents.send('kexoz:tunnel-state', state, msg);
-      }
-    },
-    onLogEntry: (entry) => {
-      if (mainWindow) {
-        mainWindow.webContents.send('kexoz:tunnel-log', entry);
-      }
-    }
-  });
+    port: config.port,
+    onStateChange: (state) => sendToWindow('kexoz:tunnel-state', key, state),
+    onLogEntry: (entry) => sendToWindow('kexoz:tunnel-log', key, entry),
+  }));
   return true;
 });
 
-ipcMain.handle('kexoz:stop-tunnel', async () => {
-  if (activeTunnel) {
-    activeTunnel.close();
-    activeTunnel = null;
-  }
+ipcMain.handle('kexoz:stop-tunnel', async (_event, key) => {
+  const k = key || 'legacy';
+  tunnels.get(k)?.close();
+  tunnels.delete(k);
+  return true;
+});
+
+ipcMain.handle('kexoz:set-tunnel-port', async (_event, key, port) => {
+  tunnels.get(key || 'legacy')?.setPort(port);
   return true;
 });
 
@@ -350,6 +347,9 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
+  // Sockets rarely survive sleep; reconnect right away instead of waiting for the silence timeout.
+  powerMonitor.on('resume', () => tunnels.forEach(tunnel => tunnel.reconnectNow()));
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -365,4 +365,6 @@ app.on('before-quit', () => {
   isQuitting = true;
   folderServers.forEach(server => server.close());
   folderServers.clear();
+  tunnels.forEach(tunnel => tunnel.close());
+  tunnels.clear();
 });

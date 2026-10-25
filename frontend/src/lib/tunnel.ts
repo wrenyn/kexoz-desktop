@@ -1,4 +1,4 @@
-import { type RequestLogEntry, type ConnectionState } from './api'
+import type { RequestLogEntry, ConnectionState } from './api'
 
 type CreateTunnelArgs = {
   apiBaseUrl: string
@@ -24,36 +24,45 @@ export function isNoiseRequestPath(path: string): boolean {
   )
 }
 
+type ConnectionHandlers = Pick<CreateTunnelArgs, 'onStateChange' | 'onLogEntry'>
+
+const handlers = new Map<string, ConnectionHandlers>()
+let subscribed = false
+
+/** One IPC listener for every share; events are routed by connection key. */
+function subscribe() {
+  if (subscribed || !window.kexoz) return
+  subscribed = true
+  window.kexoz.onTunnelState?.((key, state) => handlers.get(key)?.onStateChange(state))
+  window.kexoz.onLogEntry?.((key, entry) => handlers.get(key)?.onLogEntry(entry))
+}
+
 export function createTunnelConnection({ apiBaseUrl, clientId, tunnelId, tunnelType, portRef, onStateChange, onLogEntry }: CreateTunnelArgs) {
   const protocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws'
   const tunnelParam = tunnelId ? `&tunnelId=${encodeURIComponent(tunnelId)}` : ''
   // proto=3 signals Yamux over WebSocket
   const tunnelUrl = `${protocol}://${new URL(apiBaseUrl).host}/tunnel/connect?clientId=${encodeURIComponent(clientId)}${tunnelParam}&proto=3`
+  const key = tunnelId ?? 'legacy'
 
-  if (window.kexoz?.startTunnel) {
-    window.kexoz?.onTunnelState?.((state: ConnectionState, msg?: string) => {
-      onStateChange(state, msg)
-    })
-    
-    window.kexoz?.onLogEntry?.((entry: RequestLogEntry) => {
-      onLogEntry(entry)
-    })
-    
-    window.kexoz.startTunnel({
-      tunnelUrl,
-      tunnelType,
-      port: portRef.current ?? 3000
-    })
-    
-    return {
-      close: () => {
-        window.kexoz?.stopTunnel?.()
-      }
-    }
+  if (!window.kexoz?.startTunnel) {
+    return { close: () => {}, setPort: () => {} }
   }
 
-  // Fallback if not running in Electron
+  subscribe()
+  const entry: ConnectionHandlers = { onStateChange, onLogEntry }
+  handlers.set(key, entry)
+  void window.kexoz.startTunnel({ key, tunnelUrl, tunnelType, port: portRef.current ?? 3000 })
+
+  const isCurrent = () => handlers.get(key) === entry
   return {
-    close: () => {}
+    close: () => {
+      // A newer connection for the same share may already have replaced this one.
+      if (!isCurrent()) return
+      handlers.delete(key)
+      void window.kexoz?.stopTunnel?.(key)
+    },
+    setPort: (port: number) => {
+      if (isCurrent()) void window.kexoz?.setTunnelPort?.(key, port)
+    },
   }
 }
