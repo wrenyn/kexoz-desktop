@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import type { PersistentTunnel } from '../../lib/api'
+import type { PersistentTunnel, ShareAccess } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
-import { STATUS_BADGES, TYPE_LABELS, shareAccess, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
+import { STATUS_BADGES, TYPE_LABELS, isGatedType, shareAccess, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
 
 type Props = {
@@ -24,19 +24,101 @@ type Props = {
   onNewTunnel: () => void
   tunnelNames: Record<string, string>
   onRenameTunnel: (id: string, name: string) => void
-  gauthEnabled: boolean
-  onAuthToggle: () => void
+  onAccessChange: (tunnel: PersistentTunnel, access: ShareAccess, password?: string) => Promise<boolean>
 }
+
+const MIN_PASSWORD = 4
 
 function AccessBadge({ tunnel }: { tunnel: PersistentTunnel }) {
   const access = shareAccess(tunnel)
   return (
     <span
       className={`ps-badge ${access === 'public' ? 'ps-badge-public' : 'ps-badge-private'}`}
-      title={access === 'public' ? 'Anyone with the link can open this share' : 'Visitors must sign in or enter a password'}
+      title={access === 'public' ? 'Anyone with the link can open this share' : 'Visitors need the password to open this share'}
     >
       {access === 'public' ? 'Public' : 'Private'}
     </span>
+  )
+}
+
+function AccessEditor({ tunnel, isBusy, onSave }: {
+  tunnel: PersistentTunnel
+  isBusy: boolean
+  onSave: (access: ShareAccess, password?: string) => Promise<boolean>
+}) {
+  const current = shareAccess(tunnel)
+  const terminal = tunnel.tunnelType === 'pty'
+  const hasPassword = Boolean(tunnel.password)
+  const [access, setAccess] = useState<ShareAccess>(current)
+  const [password, setPassword] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const tooShort = password !== '' && [...password].length < MIN_PASSWORD
+  const canSave = !isBusy && !tooShort && (access === 'public'
+    ? current !== 'public'
+    : password.trim() !== '' || (access !== current && hasPassword))
+
+  const save = async () => {
+    if (!canSave) return
+    if (await onSave(access, access === 'private' && password ? password : undefined)) setPassword('')
+  }
+
+  const copyPassword = async () => {
+    if (!tunnel.password) return
+    try {
+      await navigator.clipboard.writeText(tunnel.password)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch { /* clipboard unavailable */ }
+  }
+
+  const hint =
+    access === 'public' ? 'Anyone with the link can open it.' :
+    tooShort ? `Use at least ${MIN_PASSWORD} characters.` :
+    hasPassword ? 'Visitors enter the password before it opens. Type a new one to change it.' :
+    'Set a password. Visitors enter it before the share opens.'
+
+  return (
+    <div className="ps-share-access">
+      <span className="ps-label">Who can open it</span>
+      <form className="ps-share-access-row" onSubmit={event => { event.preventDefault(); void save() }}>
+        {!terminal && (
+          <div className="ps-segmented" role="radiogroup" aria-label="Access">
+            {(['private', 'public'] as const).map(option => (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={access === option}
+                className={`ps-segmented-item ${access === option ? 'active' : ''}`}
+                onClick={() => setAccess(option)}
+              >
+                {option === 'private' ? 'Private' : 'Public'}
+              </button>
+            ))}
+          </div>
+        )}
+        {access === 'private' && (
+          <input
+            className="ps-input ps-share-access-password"
+            type="password"
+            autoComplete="new-password"
+            placeholder={hasPassword ? 'New password' : 'Password'}
+            aria-label="Share password"
+            value={password}
+            onChange={event => setPassword(event.target.value)}
+            aria-invalid={tooShort}
+          />
+        )}
+        <button type="submit" className="ps-btn ps-btn-secondary ps-btn-sm" disabled={!canSave}>Save</button>
+        {access === 'private' && hasPassword && (
+          <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copyPassword()}>
+            {copied ? 'Copied' : 'Copy password'}
+          </button>
+        )}
+      </form>
+      <span className={`ps-settings-row-desc ${tooShort ? 'ps-share-access-error' : ''}`}>{hint}</span>
+    </div>
   )
 }
 
@@ -106,7 +188,7 @@ export default function TunnelsPage({
   portInput, setPortInput, onPortSubmit,
   routeRules, onRouteRulesChange, routePortStatus, portListening, isBusy, onNewTunnel,
   persistentTunnels, selectedTunnelId, onSelectTunnel, onStartTunnel, onStopTunnel, onDeleteTunnel, onPauseTunnel,
-  folderShares, tunnelNames, onRenameTunnel, gauthEnabled, onAuthToggle
+  folderShares, tunnelNames, onRenameTunnel, onAccessChange
 }: Props) {
   const [showRoutes, setShowRoutes] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -155,6 +237,7 @@ export default function TunnelsPage({
                 const badge = STATUS_BADGES[status]
                 const type = tunnel.tunnelType ?? 'http'
                 const hasPortSettings = selected && type !== 'folder' && type !== 'pty'
+                const hasAccessSettings = selected && isGatedType(type)
                 return (
                   <div key={tunnel.id} className={`ps-saved-tunnel-wrap ${selected ? 'selected' : ''}`}>
                     <div
@@ -232,56 +315,54 @@ export default function TunnelsPage({
                       </div>
                     </div>
 
-                    {hasPortSettings && (
+                    {(hasPortSettings || hasAccessSettings) && (
                       <div className="ps-saved-tunnel-settings">
-                        <form onSubmit={onPortSubmit} className="ps-saved-tunnel-port">
-                          <label className="ps-label" htmlFor={`port-${tunnel.id}`}>Forwarding to</label>
-                          <div className="ps-input-group" style={{ width: 200 }}>
-                            <span className="ps-input-prefix">localhost:</span>
-                            <input
-                              id={`port-${tunnel.id}`}
-                              className="ps-input ps-input-mono"
-                              value={portInput}
-                              onChange={e => setPortInput(e.target.value)}
-                              placeholder="3000"
-                              type="number"
-                              min={1}
-                              max={65535}
-                            />
-                          </div>
-                          <button type="submit" className="ps-btn ps-btn-secondary ps-btn-sm" disabled={isBusy}>
-                            Apply
-                          </button>
-                          {portListening !== null && (
-                            <span className={`ps-port-status ${portListening ? 'listening' : 'offline'}`}>
-                              {portListening ? 'App is running' : 'Nothing is running on this port'}
-                            </span>
-                          )}
-                          {type === 'http' && (
-                            <button
-                              type="button"
-                              className="ps-btn ps-btn-ghost ps-btn-sm"
-                              style={{ marginLeft: 'auto' }}
-                              onClick={() => setShowRoutes(v => !v)}
-                            >
-                              {showRoutes ? 'Hide path routing' : 'Path routing'}
+                        {hasPortSettings && (
+                          <form onSubmit={onPortSubmit} className="ps-saved-tunnel-port">
+                            <label className="ps-label" htmlFor={`port-${tunnel.id}`}>Forwarding to</label>
+                            <div className="ps-input-group" style={{ width: 200 }}>
+                              <span className="ps-input-prefix">localhost:</span>
+                              <input
+                                id={`port-${tunnel.id}`}
+                                className="ps-input ps-input-mono"
+                                value={portInput}
+                                onChange={e => setPortInput(e.target.value)}
+                                placeholder="3000"
+                                type="number"
+                                min={1}
+                                max={65535}
+                              />
+                            </div>
+                            <button type="submit" className="ps-btn ps-btn-secondary ps-btn-sm" disabled={isBusy}>
+                              Apply
                             </button>
-                          )}
-                        </form>
+                            {portListening !== null && (
+                              <span className={`ps-port-status ${portListening ? 'listening' : 'offline'}`}>
+                                {portListening ? 'App is running' : 'Nothing is running on this port'}
+                              </span>
+                            )}
+                            {type === 'http' && (
+                              <button
+                                type="button"
+                                className="ps-btn ps-btn-ghost ps-btn-sm"
+                                style={{ marginLeft: 'auto' }}
+                                onClick={() => setShowRoutes(v => !v)}
+                              >
+                                {showRoutes ? 'Hide path routing' : 'Path routing'}
+                              </button>
+                            )}
+                          </form>
+                        )}
                         {type === 'http' && showRoutes && (
                           <RouteRulesEditor rules={routeRules} onChange={onRouteRulesChange} portStatus={routePortStatus} />
                         )}
-                        {type === 'http' && gauthEnabled && (
-                          <div className="ps-saved-tunnel-option">
-                            <div>
-                              <div className="ps-settings-row-label">Require Google sign-in</div>
-                              <div className="ps-settings-row-desc">Visitors sign in before they can open this link</div>
-                            </div>
-                            <label className="ps-toggle">
-                              <input type="checkbox" checked={tunnel.requireAuth} onChange={onAuthToggle} disabled={isBusy} aria-label="Require Google sign-in" />
-                              <div className="ps-toggle-track" />
-                            </label>
-                          </div>
+                        {hasAccessSettings && (
+                          <AccessEditor
+                            key={tunnel.id}
+                            tunnel={tunnel}
+                            isBusy={isBusy}
+                            onSave={(access, password) => onAccessChange(tunnel, access, password)}
+                          />
                         )}
                         {type === 'e2e' && (
                           <div>

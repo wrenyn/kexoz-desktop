@@ -1333,6 +1333,10 @@ a.ps-btn { text-decoration: none; }
 .ps-saved-tunnel-port .ps-label { margin: 0; }
 .ps-saved-tunnel-port .ps-port-status { margin-left: 0; }
 .ps-saved-tunnel-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.ps-share-access { display: flex; flex-direction: column; gap: 8px; }
+.ps-share-access-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ps-share-access-password { width: 200px; }
+.ps-share-access-error { color: var(--red); }
 .ps-usage-history { margin-top: 14px; padding: 17px 20px; }
 .ps-usage-history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 12px; }
 .ps-usage-history-heading { margin-bottom: 6px; color: var(--text-muted); font-size: 11px; font-weight: 700; }
@@ -1540,8 +1544,6 @@ a.ps-btn { text-decoration: none; }
 .ps-ns-folder.chosen { border-style: solid; background: var(--bg-input); }
 .ps-ns-folder-path { flex: 1; min-width: 0; font-family: var(--mono-font); font-size: 12px; color: var(--text-soft); word-break: break-all; }
 .ps-ns-folder.chosen .ps-ns-folder-path { color: var(--text); }
-.ps-ns-more { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
-.ps-ns-more-body { display: flex; flex-direction: column; gap: 16px; align-self: stretch; padding-top: 2px; }
 
 /* ─── CONFIRM DIALOG ──────────────────────────────────────── */
 .ps-confirm { width: 400px; }

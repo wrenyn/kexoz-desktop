@@ -83,7 +83,7 @@ export default function SettingsPage({
                   {session.ownerEmail
                     ? `Signed in as ${session.ownerEmail}`
                     : gauthEnabled
-                      ? 'Sign in to get 1 GB of bandwidth and protect links with Google sign-in.'
+                      ? 'Sign in to get 1 GB of bandwidth.'
                       : 'Google sign-in isn’t available right now.'}
                 </div>
               </div>

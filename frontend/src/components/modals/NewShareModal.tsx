@@ -1,12 +1,13 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { QUICK_PORTS } from '../../lib/storage'
-import { ROOT_DOMAIN, type ShareAccess, type SharePermissions, type Tier, type TunnelType } from '../../lib/api'
+import { ROOT_DOMAIN, type ShareAccess, type SharePermissions, type TunnelType } from '../../lib/api'
 import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, isGatedType, parseExcludes, type FolderInfo, type NewShareRequest } from '../../lib/shares'
 import { usePortScanner } from '../../hooks/usePortScanner'
 
+const MIN_PASSWORD = 4
+
 type Props = {
   onClose: () => void
-  tier: Tier
   /** Addresses the user owns that no other share is using. */
   addresses: string[]
   onManageAddresses: () => void
@@ -100,7 +101,7 @@ function Field({ label, htmlFor, aside, help, error, children }: {
   )
 }
 
-export default function NewShareModal({ onClose, onSubmit, tier, addresses, onManageAddresses }: Props) {
+export default function NewShareModal({ onClose, onSubmit, addresses, onManageAddresses }: Props) {
   const [kind, setKind] = useState<Kind>('port')
   const [address, setAddress] = useState(addresses[0] ?? '')
   const [port, setPort] = useState('')
@@ -114,7 +115,6 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
   const [broadConfirmed, setBroadConfirmed] = useState(false)
   const [password, setPassword] = useState('')
   const [expiry, setExpiry] = useState<ExpiryId>('never')
-  const [showMore, setShowMore] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [pickError, setPickError] = useState('')
@@ -136,9 +136,7 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
     (tunnelType === 'http' || tunnelType === 'pty') && readOnly ? 'read' :
     'read-write'
   const broadFolder = Boolean(folder && (folder.isDriveRoot || folder.isHome))
-  const needsPassword = access === 'private' && tier === 'anonymous' && tunnelType !== 'pty'
-  const canAddPassword = gated && tunnelType !== 'pty' && !needsPassword
-  const hasMoreOptions = canAddPassword || kind === 'folder'
+  const needsPassword = gated && access === 'private'
 
   const portNumber = Number(port)
   const addressError = address ? '' : 'Choose an address for the link.'
@@ -152,7 +150,11 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
     : broadFolder && !broadConfirmed
       ? 'Confirm you want to share this whole location.'
       : ''
-  const passwordError = needsPassword && !password ? 'Set a password, or sign in with Google to use Google sign-in instead.' : ''
+  const passwordError = !needsPassword ? '' : !password.trim()
+    ? 'Set a password for this private share.'
+    : [...password].length < MIN_PASSWORD
+      ? `Use at least ${MIN_PASSWORD} characters.`
+      : ''
   const firstError = addressError || portError || folderError || passwordError
   const show = (error: string) => (attempted ? error : '')
 
@@ -221,7 +223,7 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
         port: kind === 'folder' ? 0 : portNumber,
         access,
         permissions,
-        password: gated && password ? password : undefined,
+        password: needsPassword ? password : undefined,
         duration: EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined,
         folder: kind === 'folder' && folder ? { root: folder.path, excludes: parseExcludes(excludesText) } : undefined,
       })
@@ -231,30 +233,10 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
   }
 
   const accessHint =
-    tunnelType === 'pty' ? 'Terminals are always private. Visitors sign in with Google first.' :
+    tunnelType === 'pty' ? 'Terminals are always private. Only people with the password can open it.' :
     !gated ? 'Kexoz can’t check visitors on this kind of connection, so anyone with the address can connect. Protect the service itself.' :
     access === 'public' ? 'Anyone with the link can open it.' :
-    tier === 'anonymous' ? 'Visitors enter the password you set below.' :
-    'Visitors sign in with Google first.'
-
-  const passwordField = (
-    <Field
-      label="Password"
-      htmlFor="new-share-password"
-      help={<>Visitors sign in with the username <code>kexoz</code> and this password.</>}
-      error={show(passwordError)}
-    >
-      <input
-        id="new-share-password"
-        className="ps-input"
-        type="password"
-        autoComplete="new-password"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        aria-invalid={attempted && Boolean(passwordError)}
-      />
-    </Field>
-  )
+    'Only people with the password can open it.'
 
   return (
     <div className="ps-modal-overlay" onClick={onClose}>
@@ -456,6 +438,20 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
                   onChange={next => setFolderWritable(next === 'write')}
                 />
               </Field>
+              <Field
+                label="Hide from visitors"
+                htmlFor="new-share-excludes"
+                help={<>One per line, like <code>*.log</code> or <code>private/</code>. Files like .env and private keys are always hidden.</>}
+              >
+                <textarea
+                  id="new-share-excludes"
+                  className="ps-input ps-input-mono"
+                  rows={3}
+                  value={excludesText}
+                  onChange={e => setExcludesText(e.target.value)}
+                  placeholder={'.git\nnode_modules\nprivate/'}
+                />
+              </Field>
             </>
           )}
 
@@ -470,7 +466,25 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
             )}
           </Field>
 
-          {needsPassword && passwordField}
+          {needsPassword && (
+            <Field
+              label="Password"
+              htmlFor="new-share-password"
+              help="Visitors enter this before the share opens. Send it to the people you want to let in."
+              error={show(passwordError)}
+            >
+              <input
+                id="new-share-password"
+                className="ps-input"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void handleSubmit() }}
+                aria-invalid={attempted && Boolean(passwordError)}
+              />
+            </Field>
+          )}
 
           <Field label="Stop sharing after">
             <Segmented
@@ -481,56 +495,6 @@ export default function NewShareModal({ onClose, onSubmit, tier, addresses, onMa
             />
           </Field>
 
-          {hasMoreOptions && (
-            <div className="ps-ns-more">
-              <button
-                type="button"
-                className="ps-ns-link"
-                aria-expanded={showMore}
-                onClick={() => setShowMore(!showMore)}
-              >
-                {showMore ? 'Hide extra options' : 'More options'}
-              </button>
-              {showMore && (
-                <div className="ps-ns-more-body">
-                  {canAddPassword && (
-                    <Field
-                      label="Password (optional)"
-                      htmlFor="new-share-password"
-                      help={access === 'public' && password
-                        ? 'Adding a password makes this share private.'
-                        : <>Visitors sign in with the username <code>kexoz</code> and this password.</>}
-                    >
-                      <input
-                        id="new-share-password"
-                        className="ps-input"
-                        type="password"
-                        autoComplete="new-password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                      />
-                    </Field>
-                  )}
-                  {kind === 'folder' && (
-                    <Field
-                      label="Hide from visitors"
-                      htmlFor="new-share-excludes"
-                      help={<>One per line, like <code>*.log</code> or <code>private/</code>. Files like .env and private keys are always hidden.</>}
-                    >
-                      <textarea
-                        id="new-share-excludes"
-                        className="ps-input ps-input-mono"
-                        rows={3}
-                        value={excludesText}
-                        onChange={e => setExcludesText(e.target.value)}
-                        placeholder={'.git\nnode_modules\nprivate/'}
-                      />
-                    </Field>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="ps-ns-footer">

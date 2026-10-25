@@ -42,12 +42,12 @@ export default function GateScreen({ onLogin, onSkip, verifying, theme }: GateSc
           <button type="button" className="ps-gate-google" onClick={onLogin} disabled={verifying}>
             {verifying ? <><span className="ps-gate-spinner" aria-hidden="true" /> Waiting for Google…</> : <><GoogleMark /> Continue with Google</>}
           </button>
-          <p className="ps-gate-note">Free 1 GB of bandwidth, and private links protected by Google sign-in.</p>
+          <p className="ps-gate-note">Free 1 GB of bandwidth.</p>
 
           <button type="button" className="ps-btn ps-btn-ghost ps-gate-guest" onClick={onSkip}>
             {verifying ? 'Cancel and continue as guest' : 'Continue as guest'}
           </button>
-          {!verifying && <p className="ps-gate-note">100 MB of bandwidth. Private links need a password.</p>}
+          {!verifying && <p className="ps-gate-note">100 MB of bandwidth.</p>}
         </div>
       </div>
     </div>

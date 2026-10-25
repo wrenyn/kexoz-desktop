@@ -8,11 +8,11 @@ import { Toaster, toast } from 'react-hot-toast'
 import axios from 'axios'
 
 import {
-  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel,
+  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel, type ShareAccess,
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
-  updateExposedPort, updateCustomDomain, updateClientAuth, fetchClientStats,
-  googleLinkLoginUrl, fetchLinkStatus, tierOf, updateClientRoutes,
+  updateExposedPort, updateCustomDomain, fetchClientStats,
+  googleLinkLoginUrl, fetchLinkStatus, updateClientRoutes,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain
 } from './lib/api'
@@ -551,24 +551,17 @@ export default function App() {
     } finally { setIsBusy(false) }
   }
 
-  const handleAuthToggle = async () => {
-    if (!session) return
-    const next = !session.requireAuth
+  const handleAccessChange = async (tunnel: PersistentTunnel, access: ShareAccess, password?: string): Promise<boolean> => {
+    if (!session) return false
     setIsBusy(true)
     try {
-      const result = await updateClientAuth(session.id, next)
-      setSession(cur => cur ? { ...cur, requireAuth: result.requireAuth } : cur)
-      if (selectedTunnelId) {
-        const selected = persistentTunnels.find(tunnel => tunnel.id === selectedTunnelId)
-        if (selected) {
-          const updated = await updateTunnel(session.id, { ...selected, requireAuth: result.requireAuth })
-          setPersistentTunnels(current => current.map(tunnel => tunnel.id === updated.id ? updated : tunnel))
-        }
-      }
-      setGauthEnabled(result.gauthEnabled)
-      toast.success(result.requireAuth ? 'Visitors now sign in with Google' : 'Google sign-in turned off')
+      const updated = await updateTunnel(session.id, { ...tunnel, access, ...(password ? { password } : {}) })
+      setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
+      toast.success(access === 'public' ? 'Anyone with the link can open it now' : password ? 'Password saved' : 'Share is private')
+      return true
     } catch (err) {
       toast.error(extractError(err))
+      return false
     } finally { setIsBusy(false) }
   }
 
@@ -759,7 +752,6 @@ export default function App() {
       {showNewTunnel && session && (
         <NewShareModal
           onClose={() => setShowNewTunnel(false)}
-          tier={tierOf(session)}
           addresses={freeAddresses}
           onManageAddresses={() => { setShowNewTunnel(false); setActivePage('domains') }}
           onSubmit={createShare}
@@ -840,8 +832,7 @@ export default function App() {
                 folderShares={folderShares}
                 portListening={portListening}
                 onNewTunnel={() => setShowNewTunnel(true)}
-                gauthEnabled={gauthEnabled && Boolean(session.ownerEmail)}
-                onAuthToggle={() => void handleAuthToggle()}
+                onAccessChange={handleAccessChange}
                 tunnelNames={tunnelNames}
                 onRenameTunnel={onRenameTunnel}
               />
