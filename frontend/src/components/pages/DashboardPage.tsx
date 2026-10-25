@@ -4,6 +4,8 @@ import type { ClientSession, PersistentTunnel, RequestLogEntry, UsagePoint } fro
 import { tierOf, upgradeUrl } from '../../lib/api'
 import { shareStatus } from '../../lib/shares'
 import { isNoiseRequestPath } from '../../lib/tunnel'
+import type { ConnectionEvent } from '../../hooks/useConnectionHistory'
+import ConnectionPanel from '../dashboard/ConnectionPanel'
 
 type Props = {
   session: ClientSession
@@ -13,6 +15,7 @@ type Props = {
   bytesIn: number
   bytesOut: number
   dailyUsage: UsagePoint[]
+  connectionEvents: ConnectionEvent[]
   onNewShare: () => void
   onViewRequests: () => void
   onViewShares: () => void
@@ -42,7 +45,7 @@ function shortDate(period: string): string {
 }
 
 export default function DashboardPage({
-  session, tunnels, totalRequests, requestLog, bytesIn, bytesOut, dailyUsage,
+  session, tunnels, totalRequests, requestLog, bytesIn, bytesOut, dailyUsage, connectionEvents,
   onNewShare, onViewRequests, onViewShares,
 }: Props) {
   const tier = tierOf(session)
@@ -126,10 +129,16 @@ export default function DashboardPage({
           </div>
         </div>
 
+        {tunnels.length > 0 && (
+          <div className="animate-fade-up delay-100">
+            <ConnectionPanel tunnels={tunnels} events={connectionEvents} />
+          </div>
+        )}
+
         <div className="ps-card ps-overview-card animate-fade-up delay-100">
           <div className="ps-overview-card-head">
             <div>
-              <div className="ps-overview-card-title">Bandwidth</div>
+              <div className="ps-overview-card-title">Data this month</div>
               <div className="ps-overview-card-sub">
                 {formatBytes(session.bandwidthUsed)} of {formatBytes(session.bandwidthLimit)} used
               </div>
@@ -142,8 +151,8 @@ export default function DashboardPage({
           {bwPct >= 80 && (
             <div className="ps-overview-card-sub" style={{ marginTop: 10, color: 'var(--text)' }}>
               {bwPct >= 100
-                ? 'You’ve used all your bandwidth. Visitors see a limit page until you upgrade.'
-                : 'You’re close to your bandwidth limit. Visitors see a limit page once it runs out.'}
+                ? 'You’ve used this month’s data. Visitors see a limit page until it resets or you upgrade.'
+                : 'You’re close to this month’s data limit. Visitors see a limit page once it runs out.'}
               {tier !== 'pro_plus' && (
                 <> <a href={upgradeUrl(session.id, tier === 'pro' ? 'pro_plus' : 'pro')} target="_blank" rel="noreferrer" style={{ color: 'var(--text-accent)' }}>See plans</a></>
               )}

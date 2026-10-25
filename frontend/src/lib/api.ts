@@ -75,6 +75,8 @@ export type PersistentTunnel = {
   expiresAt?: string
   createdAt?: string
   publicTcpPort?: number
+  /** Web shares only: visitors get the notes toolbar. */
+  preview?: boolean
 }
 
 export type NewTunnelInput = Omit<PersistentTunnel, 'id' | 'active' | 'status' | 'paused' | 'expiresAt' | 'createdAt' | 'publicTcpPort'>
@@ -260,4 +262,81 @@ export const setTunnelPaused = async (clientId: string, tunnelId: string, paused
 
 export const deleteTunnel = async (clientId: string, tunnelId: string): Promise<void> => {
   await axios.delete(`${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}`, { params: { clientId } })
+}
+
+export type AccessLink = {
+  id: string
+  token: string
+  label: string
+  expiresAt?: string | null
+  maxUses: number
+  uses: number
+  createdAt: string
+  lastUsedAt?: string | null
+}
+
+export type NewAccessLink = { label: string; expiresIn?: string; maxUses?: number }
+
+const linksPath = (tunnelId: string) => `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/links`
+
+export const listAccessLinks = async (clientId: string, tunnelId: string): Promise<AccessLink[]> => {
+  const { data } = await axios.get<{ links: AccessLink[] | null }>(linksPath(tunnelId), { params: { clientId } })
+  return data.links ?? []
+}
+
+export const createAccessLink = async (clientId: string, tunnelId: string, input: NewAccessLink): Promise<{ link: AccessLink; links: AccessLink[] }> => {
+  const { data } = await axios.post<{ link: AccessLink; links: AccessLink[] | null }>(linksPath(tunnelId), { clientId, ...input }, { params: { clientId } })
+  return { link: data.link, links: data.links ?? [data.link] }
+}
+
+export const revokeAccessLink = async (clientId: string, tunnelId: string, linkId: string): Promise<AccessLink[]> => {
+  const { data } = await axios.delete<{ links: AccessLink[] | null }>(`${linksPath(tunnelId)}/${encodeURIComponent(linkId)}`, { params: { clientId } })
+  return data.links ?? []
+}
+
+export type PreviewNote = {
+  id: string
+  tunnelId: string
+  path: string
+  body: string
+  author: string
+  status: 'open' | 'resolved'
+  createdAt: string
+}
+
+export const listPreviewNotes = async (clientId: string, tunnelId?: string): Promise<PreviewNote[]> => {
+  const { data } = await axios.get<{ notes: PreviewNote[] | null }>(`${API_BASE_URL}/client/feedback`, { params: { clientId, tunnelId } })
+  return data.notes ?? []
+}
+
+export const setPreviewNoteStatus = async (clientId: string, noteId: string, status: PreviewNote['status']): Promise<void> => {
+  await axios.put(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`, { clientId, status }, { params: { clientId } })
+}
+
+export const deletePreviewNote = async (clientId: string, noteId: string): Promise<void> => {
+  await axios.delete(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`, { params: { clientId } })
+}
+
+export type Project = { id: string; name: string; tunnelIds: string[]; createdAt?: string }
+
+export const listProjects = async (clientId: string): Promise<Project[]> => {
+  const { data } = await axios.get<{ projects: Project[] | null }>(`${API_BASE_URL}/client/projects`, { params: { clientId } })
+  return data.projects ?? []
+}
+
+type ProjectsResponse = { projects: Project[] | null }
+
+export const createProject = async (clientId: string, name: string, tunnelIds: string[]): Promise<Project[]> => {
+  const { data } = await axios.post<ProjectsResponse>(`${API_BASE_URL}/client/projects`, { clientId, name, tunnelIds }, { params: { clientId } })
+  return data.projects ?? []
+}
+
+export const updateProject = async (clientId: string, id: string, name: string, tunnelIds: string[]): Promise<Project[]> => {
+  const { data } = await axios.put<ProjectsResponse>(`${API_BASE_URL}/client/projects/${encodeURIComponent(id)}`, { clientId, name, tunnelIds }, { params: { clientId } })
+  return data.projects ?? []
+}
+
+export const deleteProject = async (clientId: string, id: string): Promise<Project[]> => {
+  const { data } = await axios.delete<ProjectsResponse>(`${API_BASE_URL}/client/projects/${encodeURIComponent(id)}`, { params: { clientId } })
+  return data.projects ?? []
 }

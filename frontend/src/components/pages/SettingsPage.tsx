@@ -11,10 +11,10 @@ type Props = {
 }
 
 const TIER_LABEL: Record<string, string> = {
-  anonymous: 'Guest · 100 MB',
-  verified:  'Free · 1 GB',
-  pro:       'Pro · 5 GB',
-  pro_plus:  'Pro+ · 10 GB',
+  anonymous: 'Guest',
+  verified:  'Free',
+  pro:       'Pro',
+  pro_plus:  'Pro+',
 }
 
 export default function SettingsPage({
@@ -57,7 +57,7 @@ export default function SettingsPage({
             <div className="ps-settings-row">
               <div className="ps-settings-row-info">
                 <div className="ps-settings-row-label">Plan</div>
-                <div className="ps-settings-row-desc">Bandwidth your shares can use</div>
+                <div className="ps-settings-row-desc">Change plans or redeem a gift card on the web</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="ps-badge ps-badge-gray">
@@ -83,7 +83,7 @@ export default function SettingsPage({
                   {session.ownerEmail
                     ? `Signed in as ${session.ownerEmail}`
                     : gauthEnabled
-                      ? 'Sign in to get 1 GB of bandwidth.'
+                      ? 'Sign in for the full free plan and gift cards.'
                       : 'Google sign-in isn’t available right now.'}
                 </div>
               </div>

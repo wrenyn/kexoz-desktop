@@ -1,5 +1,8 @@
 const { app, BrowserWindow, shell, protocol, net, ipcMain, Tray, Menu, nativeImage, Notification, dialog, powerMonitor } = require('electron');
 const http = require('node:http');
+const nodeNet = require('node:net');
+const dns = require('node:dns');
+const { execFile } = require('node:child_process');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -117,21 +120,152 @@ ipcMain.handle('kexoz:local-request', async (_event, payload) => {
   }
 });
 
+const probePort = (port, host = '127.0.0.1') => new Promise((resolve) => {
+  const socket = nodeNet.createConnection({ host, port, timeout: 1200 });
+  socket.on('connect', () => {
+    socket.destroy();
+    resolve(true);
+  });
+  socket.on('error', () => resolve(false));
+  socket.on('timeout', () => {
+    socket.destroy();
+    resolve(false);
+  });
+});
+
 ipcMain.handle('kexoz:check-port', async (_event, value) => {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port, timeout: 1200 });
-    socket.on('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.on('error', () => resolve(false));
-    socket.on('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
+  // Dev servers bound to ::1 only (newer Node, Vite) don't answer on 127.0.0.1.
+  return (await probePort(port)) || probePort(port, '::1');
+});
+
+const run = (file, args) => new Promise((resolve) => {
+  execFile(file, args, { timeout: 4000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+    resolve(error ? '' : String(stdout));
   });
+});
+
+const SYSTEM_PROCESSES = new Set([
+  'system', 'svchost', 'lsass', 'wininit', 'services', 'spoolsv', 'searchhost', 'msedgewebview2',
+  'launchd', 'rapportd', 'controlcenter', 'sharingd', 'mdnsresponder', 'identityservicesd',
+  'systemd', 'systemd-resolved', 'cupsd', 'avahi-daemon', 'sshd', 'chronyd',
+]);
+
+async function listeningProcesses() {
+  const found = new Map();
+  const add = (port, name) => {
+    if (!Number.isInteger(port) || port < 1024 || port > 49151 || found.has(port)) return;
+    const base = String(name || '').replace(/\.exe$/i, '');
+    if (SYSTEM_PROCESSES.has(base.toLowerCase())) return;
+    found.set(port, base);
+  };
+  if (process.platform === 'win32') {
+    const [netstat, tasks] = await Promise.all([run('netstat', ['-ano', '-p', 'TCP']), run('tasklist', ['/FO', 'CSV', '/NH'])]);
+    const names = new Map();
+    for (const line of tasks.split(/\r?\n/)) {
+      const cells = line.match(/"([^"]*)"/g);
+      if (cells && cells.length > 1) names.set(cells[1].replace(/"/g, ''), cells[0].replace(/"/g, ''));
+    }
+    for (const line of netstat.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      // The state column is localised, but a listening socket always has foreign port 0.
+      if (parts[0] !== 'TCP' || parts.length < 5 || !/:0$/.test(parts[2])) continue;
+      if (parts[4] === String(process.pid)) continue;
+      add(Number(parts[1].split(':').pop()), names.get(parts[4]));
+    }
+  } else {
+    const lsof = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN']);
+    for (const line of lsof.split('\n').slice(1)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 9 || parts[1] === String(process.pid)) continue;
+      add(Number(parts[8].split(':').pop()), parts[0]);
+    }
+    if (found.size === 0 && process.platform === 'linux') {
+      const ss = await run('ss', ['-ltnpH']);
+      for (const line of ss.split('\n')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 4) continue;
+        const name = /users:\(\("([^"]+)"/.exec(line)?.[1];
+        add(Number(parts[3].split(':').pop()), name);
+      }
+    }
+  }
+  return found;
+}
+
+async function dockerPorts() {
+  const out = await run('docker', ['ps', '--format', '{{.Names}}|{{.Image}}|{{.Ports}}']);
+  const result = [];
+  for (const line of out.split(/\r?\n/)) {
+    const [name, image, ports] = line.split('|');
+    if (!name || !ports) continue;
+    for (const match of ports.matchAll(/:(\d+)->(\d+)\/tcp/g)) {
+      result.push({ port: Number(match[1]), container: name, image, inner: Number(match[2]) });
+    }
+  }
+  return result;
+}
+
+ipcMain.handle('kexoz:list-listening-ports', async () => {
+  const [processes, containers] = await Promise.all([listeningProcesses(), dockerPorts()]);
+  const own = new Set([...folderServers.values()].map(server => server.port).filter(Boolean));
+  const ports = new Map();
+  for (const item of containers) {
+    if (own.has(item.port) || ports.has(item.port)) continue;
+    ports.set(item.port, { port: item.port, label: `${item.container} (Docker, port ${item.inner})`, source: 'docker' });
+  }
+  for (const [port, name] of processes) {
+    if (own.has(port) || ports.has(port)) continue;
+    ports.set(port, { port, label: name || 'Unknown app', source: 'process' });
+  }
+  return [...ports.values()].sort((a, b) => a.port - b.port).slice(0, 40);
+});
+
+const timed = async (fn) => {
+  const start = Date.now();
+  try {
+    const detail = await fn();
+    return { ok: true, ms: Date.now() - start, detail };
+  } catch (error) {
+    return { ok: false, ms: Date.now() - start, detail: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+ipcMain.handle('kexoz:diagnose', async (_event, config) => {
+  const apiBase = String(config?.apiBase || '');
+  let host = '';
+  try { host = new URL(apiBase).host; } catch { throw new Error('Invalid server address'); }
+  const hostname = host.split(':')[0];
+  const ports = Array.isArray(config?.ports) ? config.ports.map(Number).filter(p => Number.isInteger(p) && p > 0 && p < 65536).slice(0, 20) : [];
+
+  const dnsResult = await timed(async () => {
+    const { address } = await dns.promises.lookup(hostname);
+    return `${hostname} resolves to ${address}`;
+  });
+  const apiResult = await timed(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await net.fetch(`${apiBase.replace(/\/$/, '')}/health/live`, { signal: controller.signal });
+      if (!res.ok) throw new Error(`Server answered ${res.status}`);
+      return 'Kexoz servers are reachable';
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  const portResults = await Promise.all(ports.map(async (port) => {
+    const open = (await probePort(port)) || (await probePort(port, '::1'));
+    return { port, open };
+  }));
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || '';
+  return {
+    online: net.isOnline(),
+    dns: dnsResult,
+    api: apiResult,
+    ports: portResults,
+    proxy: proxy ? 'A proxy is set in your environment' : '',
+  };
 });
 
 ipcMain.handle('kexoz:notify', async (_event, { title, body }) => {
@@ -157,17 +291,48 @@ ipcMain.handle('kexoz:inspect-folder', async (_event, folder) => {
 // One loopback file server per running folder share, keyed by share id.
 const folderServers = new Map();
 
+// Download counts survive restarts so a limit can't be reset by restarting the share.
+const downloadsFile = () => path.join(app.getPath('userData'), 'folder-downloads.json');
+let downloadCounts = null;
+const loadDownloadCounts = () => {
+  if (downloadCounts) return downloadCounts;
+  try {
+    downloadCounts = JSON.parse(require('node:fs').readFileSync(downloadsFile(), 'utf8')) || {};
+  } catch {
+    downloadCounts = {};
+  }
+  return downloadCounts;
+};
+let saveTimer = null;
+const saveDownloadCounts = () => {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    require('node:fs').promises.writeFile(downloadsFile(), JSON.stringify(downloadCounts || {})).catch(() => {});
+  }, 500);
+};
+
+ipcMain.handle('kexoz:folder-downloads', async () => ({ ...loadDownloadCounts() }));
+
 ipcMain.handle('kexoz:start-folder-server', async (_event, config) => {
   const shareId = String(config?.shareId || '');
   const root = config?.root;
   if (!shareId || typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('A share id and an absolute folder path are required');
   folderServers.get(shareId)?.close();
   folderServers.delete(shareId);
+  const counts = loadDownloadCounts();
   const server = createFolderServer({
     root,
     readOnly: config.readOnly !== false,
     excludes: Array.isArray(config.excludes) ? config.excludes.map(String) : undefined,
     hosts: Array.isArray(config.hosts) ? config.hosts.map(String) : [],
+    maxDownloads: Number(config.maxDownloads) || 0,
+    downloadsUsed: counts[shareId] || 0,
+    onDownload: (count) => {
+      counts[shareId] = count;
+      saveDownloadCounts();
+      sendToWindow('kexoz:folder-download', shareId, count);
+    },
   });
   const port = await server.listen();
   folderServers.set(shareId, server);
@@ -193,7 +358,7 @@ ipcMain.handle('kexoz:start-tunnel', async (_event, config) => {
     tunnelUrl: config.tunnelUrl,
     tunnelType: config.tunnelType,
     port: config.port,
-    onStateChange: (state) => sendToWindow('kexoz:tunnel-state', key, state),
+    onStateChange: (state, reason) => sendToWindow('kexoz:tunnel-state', key, state, reason),
     onLogEntry: (entry) => sendToWindow('kexoz:tunnel-log', key, entry),
   }));
   return true;

@@ -3,6 +3,7 @@ import type { PersistentTunnel, ShareAccess } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, isGatedType, shareAccess, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
+import { GuestLinks, PreviewSetting } from '../dashboard/ShareExtras'
 
 type Props = {
   portInput: string
@@ -25,6 +26,9 @@ type Props = {
   tunnelNames: Record<string, string>
   onRenameTunnel: (id: string, name: string) => void
   onAccessChange: (tunnel: PersistentTunnel, access: ShareAccess, password?: string) => Promise<boolean>
+  clientId: string
+  onTunnelUpdated: (tunnel: PersistentTunnel) => void
+  onViewFeedback: () => void
 }
 
 const MIN_PASSWORD = 4
@@ -122,13 +126,18 @@ function AccessEditor({ tunnel, isBusy, onSave }: {
   )
 }
 
+const shareLabel = (tunnel: PersistentTunnel): string =>
+  tunnel.subdomain ? `${tunnel.subdomain}.${ROOT_DOMAIN}` : shareUrl(tunnel).replace(/^\w+:\/\//, '')
+
 function shareDetail(tunnel: PersistentTunnel, folder?: FolderShareConfig): string {
   const parts = [TYPE_LABELS[tunnel.tunnelType ?? 'http']]
   if (tunnel.tunnelType === 'folder') {
     parts.push(folder?.root ?? 'Folder on another device')
+    if (folder?.maxDownloads) parts.push(`Up to ${folder.maxDownloads} ${folder.maxDownloads === 1 ? 'download' : 'downloads'}`)
   } else {
     parts.push(`localhost:${tunnel.port}`)
   }
+  if (tunnel.preview) parts.push('Interactive preview')
   if (tunnel.permissions === 'read') parts.push(tunnel.tunnelType === 'pty' ? 'View-only' : 'Read-only')
   if (tunnel.tunnelType === 'folder' && tunnel.permissions === 'read-write') parts.push('Read & write')
   if (tunnel.expiresAt && shareStatus(tunnel) !== 'expired') {
@@ -141,6 +150,7 @@ function TunnelNameRow({ tunnel, tunnelNames, onRenameTunnel }: { tunnel: Persis
   const [editing, setEditing] = useState(false)
   const customName = tunnelNames[tunnel.id]
   const [value, setValue] = useState(customName ?? '')
+  const address = shareLabel(tunnel)
 
   if (editing) {
     return (
@@ -172,10 +182,10 @@ function TunnelNameRow({ tunnel, tunnelNames, onRenameTunnel }: { tunnel: Persis
       {customName ? (
         <>
           <span className="ps-tunnel-friendly-name">{customName}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-soft)' }}>({tunnel.subdomain}.{ROOT_DOMAIN})</span>
+          <span style={{ fontSize: 12, color: 'var(--text-soft)' }}>({address})</span>
         </>
       ) : (
-        <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong>
+        <strong>{address}</strong>
       )}
       <button className="ps-rename-btn" onClick={(e) => { e.stopPropagation(); setEditing(true); setValue(customName ?? '') }} title="Rename share">
         Rename
@@ -188,7 +198,8 @@ export default function TunnelsPage({
   portInput, setPortInput, onPortSubmit,
   routeRules, onRouteRulesChange, routePortStatus, portListening, isBusy, onNewTunnel,
   persistentTunnels, selectedTunnelId, onSelectTunnel, onStartTunnel, onStopTunnel, onDeleteTunnel, onPauseTunnel,
-  folderShares, tunnelNames, onRenameTunnel, onAccessChange
+  folderShares, tunnelNames, onRenameTunnel, onAccessChange,
+  clientId, onTunnelUpdated, onViewFeedback,
 }: Props) {
   const [showRoutes, setShowRoutes] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -238,6 +249,7 @@ export default function TunnelsPage({
                 const type = tunnel.tunnelType ?? 'http'
                 const hasPortSettings = selected && type !== 'folder' && type !== 'pty'
                 const hasAccessSettings = selected && isGatedType(type)
+                const hasGuestLinks = hasAccessSettings && shareAccess(tunnel) === 'private' && Boolean(tunnel.password)
                 return (
                   <div key={tunnel.id} className={`ps-saved-tunnel-wrap ${selected ? 'selected' : ''}`}>
                     <div
@@ -245,7 +257,7 @@ export default function TunnelsPage({
                       role="button"
                       tabIndex={0}
                       aria-pressed={selected}
-                      aria-label={`Select share ${tunnel.subdomain}, ${badge.label.toLowerCase()}, ${shareAccess(tunnel)}`}
+                      aria-label={`Select share ${shareLabel(tunnel)}, ${badge.label.toLowerCase()}, ${shareAccess(tunnel)}`}
                       onClick={() => onSelectTunnel(tunnel)}
                       onKeyDown={event => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -264,7 +276,7 @@ export default function TunnelsPage({
                         <button
                           className="ps-btn ps-btn-ghost ps-btn-sm"
                           onClick={event => { event.stopPropagation(); void copyShareUrl(tunnel) }}
-                          aria-label={`Copy link for ${tunnel.subdomain}`}
+                          aria-label={`Copy link for ${shareLabel(tunnel)}`}
                         >
                           {copiedId === tunnel.id ? 'Copied' : 'Copy link'}
                         </button>
@@ -308,7 +320,7 @@ export default function TunnelsPage({
                           className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger"
                           onClick={event => { event.stopPropagation(); onDeleteTunnel(tunnel) }}
                           disabled={isBusy}
-                          aria-label={`Delete share ${tunnel.subdomain}`}
+                          aria-label={`Delete share ${shareLabel(tunnel)}`}
                         >
                           Delete
                         </button>
@@ -363,6 +375,10 @@ export default function TunnelsPage({
                             isBusy={isBusy}
                             onSave={(access, password) => onAccessChange(tunnel, access, password)}
                           />
+                        )}
+                        {hasGuestLinks && <GuestLinks key={`links-${tunnel.id}`} clientId={clientId} tunnel={tunnel} />}
+                        {selected && type === 'http' && (
+                          <PreviewSetting clientId={clientId} tunnel={tunnel} onUpdated={onTunnelUpdated} onViewFeedback={onViewFeedback} />
                         )}
                         {type === 'e2e' && (
                           <div>

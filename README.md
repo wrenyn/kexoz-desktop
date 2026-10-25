@@ -14,21 +14,25 @@ with access control, expiry and live traffic built in. Built and maintained by
 | **Web apps** | A stable `https://<name>.kexoz.dev` URL for any local port, with path routing (`/api` → `:7000`) |
 | **Private (E2E) links** | TLS terminates on your machine; the gateway only relays encrypted bytes |
 | **TCP / UDP** | A public port for Postgres, SSH, game servers, DNS and other raw protocols |
-| **Terminals** | A browser terminal for pairing or support — always behind Google sign-in, optionally view-only |
+| **Terminals** | A browser terminal for pairing or support — always behind a password, optionally view-only |
 | **Folders** | A file browser for a local folder: read-only or read & write, zip download, uploads, secret files excluded by default |
 
 ## Control who gets in
 
-- **Private or public** — private shares require Google sign-in or a password; public warnings are explicit.
+- **Private or public** — private shares ask visitors for the password you set; public warnings are explicit.
+- **Guest links** — let someone into a private share without the password, for a set time or number of visits, with a QR code; revoke any time.
 - **Permissions** — read-only shares accept only safe requests; read-only terminals are view-only.
 - **Pause, resume and expiry** — stop traffic instantly, set an expiry or make a link one-time.
 - **Custom domains** — use your own domain instead of a `kexoz.dev` subdomain (Pro).
 
 ## Built-in tools
 
-- **Request inspector** — every request with method, path, status, latency and headers; replay with one click.
-- **Dashboard** — bandwidth, requests and uptime per share, QR codes for mobile testing.
-- **Local port detection** — running dev servers are detected and offered as one-click shares.
+- **Request inspector** — every request with method, path, status, latency, headers and bodies; search bodies, edit a request (webhooks included) and resend it to your app, export HAR or JSON.
+- **Interactive preview** — turn it on for a web share and visitors can pin notes anywhere on the page; read, resolve and delete them on the Feedback page.
+- **Projects** — group the shares one app needs and start them together, or run `kexoz start <name>` from the CLI.
+- **Connection dashboard** — status, 24-hour uptime, reconnects and the reason for each drop, plus one-click diagnostics (internet, DNS, Kexoz servers, local ports).
+- **Local port detection** — every app listening on this computer, Docker containers included, is offered when you share a port.
+- **Folder download limits** — a folder share can stop serving downloads after a set number.
 - **Tray and auto-start** — keep shares running in the background.
 
 ## Tech stack

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { RequestLogEntry } from '../../lib/api'
+import { ROOT_DOMAIN, type PersistentTunnel, type RequestLogEntry } from '../../lib/api'
 import { isNoiseRequestPath } from '../../lib/tunnel'
 
 type Props = {
@@ -8,6 +8,94 @@ type Props = {
   retention: number
   onRetentionChange: (value: number) => void
   publicUrl: string
+  tunnels: PersistentTunnel[]
+}
+
+type Draft = { method: string; path: string; headers: string; body: string }
+type SendResult = { status: number; durationMs: number; body: string; headers: Record<string, string[]> } | { error: string }
+
+const EDIT_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const HOP_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding', 'x-forwarded-host', 'x-forwarded-for', 'x-forwarded-proto', 'x-real-ip', 'accept-encoding'])
+
+function requestHost(entry: RequestLogEntry): string {
+  return (Object.entries(entry.headers ?? {}).find(([key]) => ['x-forwarded-host', 'host'].includes(key.toLowerCase()))?.[1] ?? '').toLowerCase().replace(/:\d+$/, '')
+}
+
+/** The local port a request was forwarded to, honouring path routes. */
+function localPortFor(entry: RequestLogEntry, tunnels: PersistentTunnel[]): number | null {
+  const host = requestHost(entry)
+  const tunnel = tunnels.find(t => (t.subdomain && `${t.subdomain}.${ROOT_DOMAIN}` === host) || (t.customDomain && t.customDomain === host))
+  if (!tunnel || tunnel.tunnelType === 'folder') return null
+  const path = entry.path.split('?')[0]
+  const route = [...(tunnel.pathRoutes ?? [])]
+    .filter(r => r.path !== '/' && (path === r.path || path.startsWith(`${r.path.replace(/\/$/, '')}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+  return route?.port ?? tunnel.port
+}
+
+function parseHeaderText(text: string): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const index = line.indexOf(':')
+    if (index <= 0) continue
+    const key = line.slice(0, index).trim()
+    if (key && !HOP_HEADERS.has(key.toLowerCase())) headers[key] = line.slice(index + 1).trim()
+  }
+  return headers
+}
+
+function downloadFile(name: string, content: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function toHar(entries: RequestLogEntry[], base: (entry: RequestLogEntry) => string, showSensitive: boolean) {
+  const pairs = (headers: Record<string, string> | undefined) => redactHeaders(headers, showSensitive).map(([name, value]) => ({ name, value }))
+  const header = (headers: Record<string, string> | undefined, name: string) =>
+    Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === name)?.[1] ?? ''
+  return {
+    log: {
+      version: '1.2',
+      creator: { name: 'Kexoz', version: '1' },
+      entries: entries.map(entry => {
+        const url = `${base(entry).replace(/\/$/, '')}${entry.path}`
+        let query: { name: string; value: string }[] = []
+        try { query = [...new URL(url).searchParams.entries()].map(([name, value]) => ({ name, value })) } catch { /* relative */ }
+        return {
+          startedDateTime: entry.timestamp,
+          time: entry.durationMs ?? 0,
+          request: {
+            method: entry.method,
+            url,
+            httpVersion: 'HTTP/1.1',
+            headers: pairs(entry.headers),
+            queryString: query,
+            cookies: [],
+            headersSize: -1,
+            bodySize: entry.body ? entry.body.length : 0,
+            ...(entry.body ? { postData: { mimeType: header(entry.headers, 'content-type') || 'application/octet-stream', text: entry.body } } : {}),
+          },
+          response: {
+            status: entry.status ?? 0,
+            statusText: '',
+            httpVersion: 'HTTP/1.1',
+            headers: pairs(entry.responseHeaders),
+            cookies: [],
+            content: { size: entry.responseBody?.length ?? 0, mimeType: header(entry.responseHeaders, 'content-type') || 'application/octet-stream', text: entry.responseBody ?? '' },
+            redirectURL: header(entry.responseHeaders, 'location'),
+            headersSize: -1,
+            bodySize: -1,
+          },
+          cache: {},
+          timings: { send: 0, wait: entry.durationMs ?? 0, receive: 0 },
+        }
+      }),
+    },
+  }
 }
 
 type DetailTab = 'headers' | 'body' | 'response'
@@ -88,7 +176,7 @@ function HeaderList({ headers, showSensitive, empty }: { headers: Record<string,
   )
 }
 
-export default function RequestsPage({ requestLog, onClear, retention, onRetentionChange, publicUrl }: Props) {
+export default function RequestsPage({ requestLog, onClear, retention, onRetentionChange, publicUrl, tunnels }: Props) {
   const [selected, setSelected] = useState<RequestLogEntry | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('headers')
   const [showFrameworkRequests, setShowFrameworkRequests] = useState(false)
@@ -101,6 +189,76 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
   const [replaying, setReplaying] = useState(false)
   const [replayResult, setReplayResult] = useState<{ status: number; ok: boolean; durationMs?: number } | null>(null)
   const [originalForReplay, setOriginalForReplay] = useState<{ status: number | null; durationMs: number | null } | null>(null)
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [sending, setSending] = useState(false)
+  const [sendResult, setSendResult] = useState<SendResult | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
+
+  const selectEntry = (entry: RequestLogEntry) => {
+    setSelected(entry)
+    setDraft(null)
+    setSendResult(null)
+    setReplayResult(null)
+  }
+
+  const startEditing = () => {
+    if (!selected) return
+    setDraft({
+      method: selected.method,
+      path: selected.path,
+      headers: Object.entries(selected.headers ?? {})
+        .filter(([key]) => !HOP_HEADERS.has(key.toLowerCase()))
+        .map(([key, value]) => `${key}: ${value}`).join('\n'),
+      body: selected.body ?? '',
+    })
+    setSendResult(null)
+    setActiveTab('body')
+  }
+
+  const sendDraft = async () => {
+    if (!selected || !draft) return
+    const port = localPortFor(selected, tunnels)
+    if (!port || !window.kexoz?.localRequest) {
+      setSendResult({ error: 'Could not tell which local app this request went to. Start its share and try again.' })
+      return
+    }
+    setSending(true)
+    setSendResult(null)
+    const start = Date.now()
+    try {
+      const path = draft.path.startsWith('/') ? draft.path : `/${draft.path}`
+      const sendsBody = !['GET', 'HEAD'].includes(draft.method) && draft.body !== ''
+      const result = await window.kexoz.localRequest({
+        port,
+        method: draft.method,
+        path,
+        headers: parseHeaderText(draft.headers),
+        body: sendsBody ? new TextEncoder().encode(draft.body) : undefined,
+      })
+      const bytes = result.body instanceof Uint8Array ? result.body : new Uint8Array(result.body)
+      const text = new TextDecoder().decode(bytes.subarray(0, 200 * 1024))
+      setSendResult({ status: result.status, durationMs: Date.now() - start, body: text, headers: result.headers })
+    } catch (err) {
+      setSendResult({ error: err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : 'Your app did not answer' })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const exportLog = (format: 'har' | 'json') => {
+    setExportOpen(false)
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    if (format === 'har') {
+      downloadFile(`kexoz-requests-${stamp}.har`, JSON.stringify(toHar(displayLog, replayBase, showSensitive), null, 2), 'application/json')
+      return
+    }
+    const entries = displayLog.map(entry => ({
+      ...entry,
+      headers: Object.fromEntries(redactHeaders(entry.headers, showSensitive)),
+      responseHeaders: Object.fromEntries(redactHeaders(entry.responseHeaders, showSensitive)),
+    }))
+    downloadFile(`kexoz-requests-${stamp}.json`, JSON.stringify(entries, null, 2), 'application/json')
+  }
 
   const [listWidth, setListWidth] = useState(380)
   const handleResizeStart = (e: React.MouseEvent) => {
@@ -161,7 +319,12 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     if (!showFrameworkRequests && isNoiseRequestPath(entry.path)) return false
     if (methodFilter !== 'all' && entry.method !== methodFilter) return false
     if (statusFilter !== 'all' && !String(entry.status ?? '').startsWith(statusFilter)) return false
-    return !search.trim() || `${entry.method} ${entry.path}`.toLowerCase().includes(search.trim().toLowerCase())
+    const query = search.trim().toLowerCase()
+    if (!query) return true
+    return `${entry.method} ${entry.path}`.toLowerCase().includes(query) ||
+      (entry.body ?? '').toLowerCase().includes(query) ||
+      (entry.responseBody ?? '').toLowerCase().includes(query) ||
+      Object.entries(entry.headers ?? {}).some(([key, value]) => `${key}: ${value}`.toLowerCase().includes(query))
   })
 
   const copyCurl = async () => {
@@ -200,6 +363,17 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
               <option value={250}>250</option>
             </select>
           </label>
+          <div className="ps-req-export">
+            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => setExportOpen(v => !v)} disabled={displayLog.length === 0} aria-expanded={exportOpen}>
+              Export
+            </button>
+            {exportOpen && (
+              <div className="ps-req-export-menu" role="menu">
+                <button role="menuitem" onClick={() => exportLog('har')}>HAR file<span>Opens in browser dev tools</span></button>
+                <button role="menuitem" onClick={() => exportLog('json')}>JSON<span>Raw requests and responses</span></button>
+              </div>
+            )}
+          </div>
           <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onClear} disabled={!hasRequests}>
             Clear
           </button>
@@ -224,7 +398,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
           <>
             <div className="ps-req-filters">
               <div className="ps-req-search">
-                <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by path" />
+                <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search paths, headers and bodies" />
               </div>
               <select value={methodFilter} onChange={event => setMethodFilter(event.target.value)} aria-label="Method">
                 <option value="all">All methods</option>
@@ -259,7 +433,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                     <div
                       key={`${entry.id}-${i}`}
                       className={`ps-req-item ${selected?.id === entry.id ? 'selected' : ''}`}
-                      onClick={() => setSelected(entry)}
+                      onClick={() => selectEntry(entry)}
                       style={{ animationDelay: `${Math.min(i * 20, 200)}ms` }}
                     >
                       <span className={methodClass(entry.method)}>{entry.method}</span>
@@ -315,6 +489,14 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                         >
                           {replaying ? 'Sending…' : 'Send again'}
                         </button>
+                        <button
+                          className="ps-btn ps-btn-ghost ps-btn-sm"
+                          onClick={startEditing}
+                          disabled={draft !== null}
+                          title="Change the body or headers and send it straight to your app"
+                        >
+                          Edit and resend
+                        </button>
                         <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copyCurl()}>
                           {copied ? 'Copied' : 'Copy as curl'}
                         </button>
@@ -346,13 +528,65 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                     </div>
 
                     <div className="ps-detail-body animate-fade-in">
-                      {activeTab === 'headers' && (
+                      {draft && (
+                        <div className="ps-req-editor">
+                          <div className="ps-req-editor-line">
+                            <select value={draft.method} onChange={event => setDraft({ ...draft, method: event.target.value })} aria-label="Method">
+                              {[...new Set([draft.method, ...EDIT_METHODS])].map(method => <option key={method} value={method}>{method}</option>)}
+                            </select>
+                            <input
+                              className="ps-input ps-input-mono"
+                              value={draft.path}
+                              onChange={event => setDraft({ ...draft, path: event.target.value })}
+                              aria-label="Path"
+                            />
+                          </div>
+                          <label className="ps-detail-label" htmlFor="req-edit-headers">Headers</label>
+                          <textarea
+                            id="req-edit-headers"
+                            className="ps-input ps-input-mono"
+                            rows={5}
+                            value={draft.headers}
+                            onChange={event => setDraft({ ...draft, headers: event.target.value })}
+                          />
+                          <label className="ps-detail-label" htmlFor="req-edit-body">Body</label>
+                          <textarea
+                            id="req-edit-body"
+                            className="ps-input ps-input-mono"
+                            rows={8}
+                            value={draft.body}
+                            onChange={event => setDraft({ ...draft, body: event.target.value })}
+                            disabled={['GET', 'HEAD'].includes(draft.method)}
+                            placeholder={['GET', 'HEAD'].includes(draft.method) ? `${draft.method} requests have no body` : ''}
+                          />
+                          <div className="ps-req-editor-actions">
+                            <span className="ps-settings-row-desc">
+                              {localPortFor(selected, tunnels) ? `Sends to localhost:${localPortFor(selected, tunnels)}` : 'Start the share this request came through to send it'}
+                            </span>
+                            <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => { setDraft(null); setSendResult(null) }}>Cancel</button>
+                            <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => void sendDraft()} disabled={sending}>
+                              {sending ? 'Sending…' : 'Send to my app'}
+                            </button>
+                          </div>
+                          {sendResult && ('error' in sendResult ? (
+                            <div className="ps-code" style={{ color: 'var(--red)' }}>{sendResult.error}</div>
+                          ) : (
+                            <div>
+                              <div className="ps-detail-label">
+                                Your app answered {sendResult.status} in {sendResult.durationMs} ms
+                              </div>
+                              <div className="ps-code" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto' }} dangerouslySetInnerHTML={{ __html: formatBody(sendResult.body) || 'Empty' }} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!draft && activeTab === 'headers' && (
                         <div>
                           <div className="ps-detail-label">Request headers</div>
                           <HeaderList headers={selected.headers} showSensitive={showSensitive} empty="No headers recorded" />
                         </div>
                       )}
-                      {activeTab === 'body' && (
+                      {!draft && activeTab === 'body' && (
                         <div>
                           <div className="ps-detail-label">Request body</div>
                           {selected.method === 'GET' ? (
@@ -362,7 +596,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           )}
                         </div>
                       )}
-                      {activeTab === 'response' && (
+                      {!draft && activeTab === 'response' && (
                         <>
                           <div>
                             <div className="ps-detail-label">Response headers</div>

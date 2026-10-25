@@ -12,8 +12,9 @@ const COMMON_PORTS = [
   { port: 9000, label: 'PHP / SonarQube' },
 ]
 
-export type DetectedPort = { port: number; label: string }
+export type DetectedPort = { port: number; label: string; docker?: boolean }
 
+/** Ports with something listening: every local server (including Docker) when the OS allows it, else common dev ports. */
 export function usePortScanner(enabled: boolean): DetectedPort[] {
   const [detected, setDetected] = useState<DetectedPort[]>([])
 
@@ -21,12 +22,15 @@ export function usePortScanner(enabled: boolean): DetectedPort[] {
     if (!enabled || !window.kexoz?.checkPort) return
     let cancelled = false
     const scan = async () => {
-      const results: DetectedPort[] = []
+      const results = new Map<number, DetectedPort>()
+      const listed = await window.kexoz?.listListeningPorts?.().catch(() => []) ?? []
+      for (const item of listed) results.set(item.port, { port: item.port, label: item.label, docker: item.source === 'docker' })
       await Promise.all(COMMON_PORTS.map(async ({ port, label }) => {
-        const listening = await window.kexoz!.checkPort(port)
-        if (listening) results.push({ port, label })
+        if (results.has(port)) return
+        const listening = await window.kexoz!.checkPort(port).catch(() => false)
+        if (listening) results.set(port, { port, label })
       }))
-      if (!cancelled) setDetected(results.sort((a, b) => a.port - b.port))
+      if (!cancelled) setDetected([...results.values()].sort((a, b) => a.port - b.port))
     }
     void scan()
     const id = window.setInterval(() => void scan(), 8000)

@@ -119,8 +119,15 @@ function dosDateTime(date) {
   };
 }
 
-function createFolderServer({ root, readOnly = true, excludes = DEFAULT_EXCLUDES, hosts = [] }) {
+function createFolderServer({ root, readOnly = true, excludes = DEFAULT_EXCLUDES, hosts = [], maxDownloads = 0, downloadsUsed = 0, onDownload = () => {} }) {
   const rules = compileRules([...SECRET_PATTERNS, ...excludes]);
+  let downloads = Math.max(0, Number(downloadsUsed) || 0);
+  const limit = Math.max(0, Math.floor(Number(maxDownloads) || 0));
+  const limitReached = () => limit > 0 && downloads >= limit;
+  const countDownload = () => {
+    downloads += 1;
+    try { onDownload(downloads); } catch { /* reporting is best effort */ }
+  };
   // Loopback names stay allowed so the owner can preview locally; a rebinding
   // page cannot make a browser send them for its own origin.
   const allowedHosts = new Set(['127.0.0.1', 'localhost', ...hosts.map(host => String(host).toLowerCase())].filter(Boolean));
@@ -254,7 +261,7 @@ function createFolderServer({ root, readOnly = true, excludes = DEFAULT_EXCLUDES
   .empty{padding:28px;text-align:center;color:#7D877F}
 </style></head><body><main>
 <header><div class="crumbs">${crumbs.join('<span>/</span>')}</div>
-<div><span class="badge">${readOnly ? 'Read-only' : 'Read &amp; write'}</span> <a class="btn" href="${base}?zip">Download folder (.zip)</a></div></header>
+<div><span class="badge">${readOnly ? 'Read-only' : 'Read &amp; write'}</span>${limit > 0 ? ` <span class="badge">${limitReached() ? 'No downloads left' : `${limit - downloads} of ${limit} downloads left`}</span>` : ''} <a class="btn" href="${base}?zip">Download folder (.zip)</a></div></header>
 ${writeControls}
 <table>${rows || '<tr><td class="empty" colspan="4">This folder is empty.</td></tr>'}</table>
 </main></body></html>`;
@@ -310,8 +317,11 @@ ${writeControls}
       status = 206;
       headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
     }
+    const counts = req.method !== 'HEAD' && start === 0;
+    if (counts && limitReached()) return send(res, 410, 'This share has reached its download limit.');
     headers['Content-Length'] = stat.size === 0 ? 0 : end - start + 1;
     res.writeHead(status, headers);
+    if (counts) countDownload();
     if (req.method === 'HEAD' || stat.size === 0) {
       res.end();
       return;
@@ -327,6 +337,10 @@ ${writeControls}
   // skipped to avoid loops; zip32 limits are enforced rather than corrupting.
   async function serveZip(req, res, target) {
     const zipName = `${target.segments[target.segments.length - 1] || path.basename(rootReal) || 'share'}.zip`;
+    if (req.method !== 'HEAD') {
+      if (limitReached()) return send(res, 410, 'This share has reached its download limit.');
+      countDownload();
+    }
     res.writeHead(200, {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(zipName)}`,
@@ -573,8 +587,11 @@ ${writeControls}
         server.once('error', reject);
         server.listen(0, '127.0.0.1', resolve);
       });
-      return server.address().port;
+      this.port = server.address().port;
+      return this.port;
     },
+    port: 0,
+    get downloads() { return downloads; },
     close() {
       server.closeAllConnections?.();
       server.close();

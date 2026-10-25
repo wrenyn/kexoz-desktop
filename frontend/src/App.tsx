@@ -16,8 +16,9 @@ import {
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain
 } from './lib/api'
-import type { FolderShareConfig, NewShareRequest } from './lib/shares'
+import { shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
 import { useFolderShares } from './hooks/useFolderShares'
+import { useConnectionHistory } from './hooks/useConnectionHistory'
 import { clearClientId, getClientId, setClientId } from './lib/storage'
 import { normalizeSubdomain, extractError } from './lib/utils'
 import { createTunnelConnection } from './lib/tunnel'
@@ -37,6 +38,8 @@ import TunnelsPage from './components/pages/TunnelsPage'
 import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
+import FeedbackPage from './components/pages/FeedbackPage'
+import ProjectsPage from './components/pages/ProjectsPage'
 import NewShareModal from './components/modals/NewShareModal'
 
 const TOAST_OPTIONS = {
@@ -101,14 +104,15 @@ export default function App() {
   const { requestLog, totalRequests, retention, setRetention, addLogEntry, clearLog } = useRequestLog()
   const { names: tunnelNames, setName: onRenameTunnel } = useTunnelNames()
   const { confirm, dialog: confirmDialog } = useConfirm()
+  const { events: connectionEvents, record: recordConnection } = useConnectionHistory()
 
-  // Ctrl/Cmd+1…5 jump between pages in sidebar order; Ctrl/Cmd+N starts a new share.
+  // Ctrl/Cmd+number jumps between pages in sidebar order; Ctrl/Cmd+N starts a new share.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
       const target = event.target as HTMLElement | null
       if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return
-      const pages: Record<string, Page> = { '1': 'dashboard', '2': 'tunnels', '3': 'requests', '4': 'domains', '5': 'settings' }
+      const pages: Record<string, Page> = Object.fromEntries(NAV_ITEMS.map(item => [item.shortcut, item.id]))
       if (event.key.toLowerCase() === 'n') {
         event.preventDefault()
         setActivePage('tunnels')
@@ -162,10 +166,11 @@ export default function App() {
   const lastPortListening = useRef<boolean | null>(null)
 
   /** The status shown to the user is the worst state across every running share. */
-  const setShareState = useCallback((key: string, state: ConnectionState | null) => {
+  const setShareState = useCallback((key: string, state: ConnectionState | null, reason?: string) => {
     const states = connectionStates.current
     if (state === null) states.delete(key)
     else states.set(key, state)
+    if (key !== 'legacy') recordConnection(key, state, reason)
     const all = [...states.values()]
     setConnState(
       all.includes('disconnected') ? 'disconnected'
@@ -173,7 +178,7 @@ export default function App() {
         : all.includes('connected') ? 'connected'
         : 'idle',
     )
-  }, [])
+  }, [recordConnection])
 
   const openTunnelConnection = useCallback((clientId: string, tunnelId?: string, port?: number, routes?: Array<{ path: string; port: number }>, tunnelType?: string) => {
     const key = tunnelId ?? 'legacy'
@@ -186,7 +191,7 @@ export default function App() {
       tunnelId,
       tunnelType,
       portRef,
-      onStateChange: state => setShareState(key, state),
+      onStateChange: (state, reason) => setShareState(key, state, reason),
       onLogEntry: addLogEntry,
       routesRef: connectionRoutesRef,
     })
@@ -219,6 +224,7 @@ export default function App() {
       readOnly: tunnel.permissions !== 'read-write',
       excludes: config.excludes,
       hosts: [`${tunnel.subdomain}.${ROOT_DOMAIN}`, tunnel.customDomain].filter(Boolean),
+      maxDownloads: config.maxDownloads,
     })
     openTunnelConnection(clientId, tunnel.id, port, [{ path: '/', port }], tunnel.tunnelType)
   }, [openTunnelConnection])
@@ -446,7 +452,7 @@ export default function App() {
             setPortInput(fresh.port ? String(fresh.port) : '')
             setSubdomainInput(fresh.subdomain)
             setDomainInput(fresh.customDomain)
-            toast.success('Signed in. You now have 1 GB of bandwidth.', { id: 'google-signin' })
+            toast.success('Signed in. You now have the full free plan.', { id: 'google-signin' })
             setStep(cur => cur === 'gate' ? (fresh.subdomain ? 'dashboard' : 'subdomain') : cur)
             return
           }
@@ -604,7 +610,7 @@ export default function App() {
         setPersistentTunnels(current => current.map(item => item.id === reverted.id ? reverted : item))
         throw err
       }
-      toast.success(`Sharing on ${updated.subdomain}.${ROOT_DOMAIN}`)
+      toast.success(`Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -620,7 +626,7 @@ export default function App() {
       setPersistentTunnels(current => current.map(item => item.id === tunnel.id ? { ...item, active: false, status: item.status === 'active' ? 'stopped' : item.status } : item))
       disconnectShare(tunnel)
       if (tunnel.id === selectedTunnelId) tunnelClose.current = null
-      toast.success(`Stopped ${tunnel.subdomain}.${ROOT_DOMAIN}`)
+      toast.success(`Stopped ${shareUrl(tunnel).replace(/^https:\/\//, '')}`)
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -632,7 +638,9 @@ export default function App() {
     if (!session) return
     const accepted = await confirm({
       title: 'Delete this share?',
-      message: <>The link <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong> stops working right away. The address stays yours, so you can use it again.</>,
+      message: tunnel.subdomain
+        ? <>The link <strong>{tunnel.subdomain}.{ROOT_DOMAIN}</strong> stops working right away. The address stays yours, so you can use it again.</>
+        : <>The address <strong>{shareUrl(tunnel)}</strong> stops working right away.</>,
       confirmLabel: 'Delete share',
       tone: 'danger',
     })
@@ -687,6 +695,7 @@ export default function App() {
         permissions: request.permissions,
         password: request.password,
         duration: request.duration,
+        preview: request.preview,
       })
       if (request.folder) setFolder(created.id, request.folder)
       setPersistentTunnels(current => [...current, created])
@@ -729,6 +738,10 @@ export default function App() {
     } finally {
       setIsBusy(false)
     }
+  }
+
+  const handleTunnelUpdated = (updated: PersistentTunnel) => {
+    setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
   }
 
   const usedAddresses = new Set(persistentTunnels.map(tunnel => tunnel.subdomain))
@@ -807,9 +820,30 @@ export default function App() {
                 bytesIn={bytesIn}
                 bytesOut={bytesOut}
                 dailyUsage={dailyUsage}
+                connectionEvents={connectionEvents}
                 onNewShare={() => setShowNewTunnel(true)}
                 onViewRequests={() => setActivePage('requests')}
                 onViewShares={() => setActivePage('tunnels')}
+              />
+            )}
+
+            {activePage === 'projects' && (
+              <ProjectsPage
+                clientId={session.id}
+                tunnels={persistentTunnels}
+                tunnelNames={tunnelNames}
+                isBusy={isBusy}
+                onStartTunnel={startPersistentTunnel}
+                onStopTunnel={stopPersistentTunnel}
+              />
+            )}
+
+            {activePage === 'feedback' && (
+              <FeedbackPage
+                clientId={session.id}
+                tunnels={persistentTunnels}
+                tunnelNames={tunnelNames}
+                onOpenShares={() => setActivePage('tunnels')}
               />
             )}
 
@@ -835,6 +869,9 @@ export default function App() {
                 onAccessChange={handleAccessChange}
                 tunnelNames={tunnelNames}
                 onRenameTunnel={onRenameTunnel}
+                clientId={session.id}
+                onTunnelUpdated={handleTunnelUpdated}
+                onViewFeedback={() => setActivePage('feedback')}
               />
             )}
 
@@ -845,6 +882,7 @@ export default function App() {
                 retention={retention}
                 onRetentionChange={setRetention}
                 publicUrl={publicUrl}
+                tunnels={persistentTunnels}
               />
             )}
 

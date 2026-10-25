@@ -178,3 +178,22 @@ test('flags drive roots and the home folder', async () => {
   assert.equal(plain.isHome, false);
   assert.equal(plain.isDirectory, true);
 });
+
+test('stops serving downloads once the limit is reached', async () => {
+  const counts = [];
+  const limited = createFolderServer({ root: shareRoot, hosts: [HOST], maxDownloads: 2, downloadsUsed: 1, onDownload: count => counts.push(count) });
+  const port = await limited.listen();
+  try {
+    const listing = await request(port, 'GET', '/');
+    assert.match(listing.body.toString(), /1 of 2 downloads left/);
+    const resumed = await request(port, 'GET', '/hello.txt', { headers: { Range: 'bytes=3-' } });
+    assert.equal(resumed.status, 206, 'continuing a download does not count');
+    assert.equal((await request(port, 'GET', '/hello.txt?download')).status, 200);
+    assert.deepEqual(counts, [2]);
+    assert.equal((await request(port, 'GET', '/hello.txt')).status, 410);
+    assert.equal((await request(port, 'GET', '/docs/?zip')).status, 410);
+    assert.equal((await request(port, 'GET', '/')).status, 200, 'browsing still works');
+  } finally {
+    limited.close();
+  }
+});

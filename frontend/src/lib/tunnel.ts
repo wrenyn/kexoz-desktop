@@ -33,7 +33,7 @@ let subscribed = false
 function subscribe() {
   if (subscribed || !window.kexoz) return
   subscribed = true
-  window.kexoz.onTunnelState?.((key, state) => handlers.get(key)?.onStateChange(state))
+  window.kexoz.onTunnelState?.((key, state, reason) => handlers.get(key)?.onStateChange(state, reason))
   window.kexoz.onLogEntry?.((key, entry) => handlers.get(key)?.onLogEntry(entry))
 }
 

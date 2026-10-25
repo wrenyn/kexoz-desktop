@@ -115,6 +115,29 @@ function pipeTcp(stream, port, onLogEntry) {
  * close() is called. Each call owns its own socket, so several shares can run
  * side by side and a replaced connection can't report on its successor.
  */
+/** Turns socket errors into something a person can act on. */
+function describeDrop(message, code) {
+  const text = String(message || '');
+  const status = /Unexpected server response: (\d+)/.exec(text);
+  if (status) {
+    const value = Number(status[1]);
+    if (value === 402) return 'Plan limit reached or monthly data used up';
+    if (value === 401 || value === 403) return 'The server refused this share';
+    if (value === 404) return 'The share no longer exists on the server';
+    if (value === 429) return 'Too many connection attempts';
+    if (value >= 500) return `Server error (${value})`;
+    return `Server answered ${value}`;
+  }
+  if (/ENOTFOUND|EAI_AGAIN/.test(text)) return 'No internet connection or DNS lookup failed';
+  if (/ECONNREFUSED/.test(text)) return 'The server refused the connection';
+  if (/ETIMEDOUT|timed out/i.test(text)) return 'Connection timed out';
+  if (/ECONNRESET/.test(text)) return 'The connection was reset';
+  if (/certificate|CERT_|SSL|TLS/i.test(text)) return 'Secure connection failed (certificate problem)';
+  if (text) return text;
+  if (code === 1006) return 'Network connection dropped';
+  return code ? `Connection closed (code ${code})` : 'Connection closed';
+}
+
 function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange }) {
   let currentPort = port;
   let ws = null;
@@ -123,6 +146,7 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
   let attempt = 0;
   let retryTimer = null;
   let silenceTimer = null;
+  let lastError = '';
 
   const clearSilence = () => {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -130,7 +154,10 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
   };
   const armSilence = (socket) => {
     clearSilence();
-    silenceTimer = setTimeout(() => socket.terminate(), SILENCE_LIMIT_MS);
+    silenceTimer = setTimeout(() => {
+      lastError = 'The server stopped responding';
+      socket.terminate();
+    }, SILENCE_LIMIT_MS);
   };
 
   const scheduleRetry = () => {
@@ -161,6 +188,7 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
     if (closed) return;
     teardown();
     onStateChange('connecting');
+    lastError = '';
     const socket = new WebSocket(tunnelUrl);
     ws = socket;
 
@@ -188,15 +216,16 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
     socket.on('ping', () => armSilence(socket));
     socket.on('message', () => armSilence(socket));
 
-    socket.on('close', () => {
+    socket.on('close', (code, reason) => {
       if (socket !== ws) return;
       teardown();
       if (closed) return;
-      onStateChange('disconnected');
+      onStateChange('disconnected', describeDrop(lastError || (reason && reason.toString()), code));
       scheduleRetry();
     });
 
     socket.on('error', (err) => {
+      lastError = err.message;
       console.error('Tunnel connection error:', err.message);
     });
   }
@@ -223,4 +252,4 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
   };
 }
 
-module.exports = { connectTunnel };
+module.exports = { connectTunnel, describeDrop };

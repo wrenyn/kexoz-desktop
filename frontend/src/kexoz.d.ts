@@ -27,6 +27,20 @@ type FolderServerConfig = {
   excludes: string[]
   /** Public hostnames the share answers to; anything else is refused. */
   hosts: string[]
+  /** 0 means no limit. */
+  maxDownloads?: number
+}
+
+type ListeningPort = { port: number; label: string; source: 'docker' | 'process' }
+
+type TimedCheck = { ok: boolean; ms: number; detail: string }
+
+type DiagnosisResult = {
+  online: boolean
+  dns: TimedCheck
+  api: TimedCheck
+  ports: { port: number; open: boolean }[]
+  proxy: string
 }
 
 declare global {
@@ -46,7 +60,11 @@ declare global {
       inspectFolder?: (folder: string) => Promise<FolderInfo>
       startFolderServer?: (config: FolderServerConfig) => Promise<{ port: number }>
       stopFolderServer?: (shareId: string) => Promise<boolean>
-      onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState) => void) => () => void
+      listListeningPorts?: () => Promise<ListeningPort[]>
+      diagnose?: (config: { apiBase: string; ports: number[] }) => Promise<DiagnosisResult>
+      folderDownloads?: () => Promise<Record<string, number>>
+      onFolderDownload?: (callback: (shareId: string, count: number) => void) => () => void
+      onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState, reason?: string) => void) => () => void
       onLogEntry: (callback: (key: string, entry: import('./lib/api').RequestLogEntry) => void) => () => void
     }
   }

@@ -13,6 +13,8 @@ export type FolderInfo = {
 export type FolderShareConfig = {
   root: string
   excludes: string[]
+  /** Downloads allowed before the share refuses more; 0 or missing means no limit. */
+  maxDownloads?: number
 }
 
 export type NewShareRequest = {
@@ -25,6 +27,7 @@ export type NewShareRequest = {
   password?: string
   duration?: string
   folder?: FolderShareConfig
+  preview?: boolean
 }
 
 export const DEFAULT_FOLDER_EXCLUDES = ['.git', 'node_modules']
