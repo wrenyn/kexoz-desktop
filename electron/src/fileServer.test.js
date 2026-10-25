@@ -67,6 +67,23 @@ test('serves files and lists folders', async () => {
   assert.match(html, /docs\//);
 });
 
+test('sandboxes only files that could run script', async () => {
+  const names = { 'clip.mp4': false, 'song.mp3': false, 'photo.png': false, 'book.pdf': false, 'page.html': true, 'logo.svg': true, 'data.json': true, 'blob.bin': true };
+  const dir = path.join(shareRoot, 'media');
+  fs.mkdirSync(dir);
+  try {
+    for (const name of Object.keys(names)) fs.writeFileSync(path.join(dir, name), 'x');
+    for (const [name, sandboxed] of Object.entries(names)) {
+      const res = await request(readOnly.port, 'GET', `/media/${name}`, { headers: { Range: 'bytes=0-0' } });
+      assert.equal(res.status, 206, name);
+      assert.equal(res.headers['content-security-policy'], sandboxed ? 'sandbox' : undefined, name);
+      assert.equal(res.headers['x-content-type-options'], 'nosniff', name);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('never escapes the share root', async () => {
   const attempts = [
     '/../outside.txt',

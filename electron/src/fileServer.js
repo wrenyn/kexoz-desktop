@@ -47,6 +47,15 @@ const KIND_EXTENSIONS = {
 const KIND_BY_EXTENSION = new Map(Object.entries(KIND_EXTENSIONS).flatMap(([kind, list]) => list.map(ext => [ext, kind])));
 const KIND_LABELS = [['folder', 'Folders'], ['image', 'Images'], ['video', 'Videos'], ['audio', 'Audio'], ['document', 'Documents'], ['archive', 'Archives'], ['code', 'Code'], ['other', 'Other']];
 
+// A sandboxed page has no origin, so Chrome treats the video player's and PDF
+// viewer's own follow-up requests as cross-site and drops the private-share
+// cookie. These types can't run script on the share's origin anyway.
+function needsSandbox(type) {
+  if (type === 'application/pdf') return false;
+  if (type.startsWith('video/') || type.startsWith('audio/')) return false;
+  return !type.startsWith('image/') || type === 'image/svg+xml';
+}
+
 function kindOf(name, isDirectory) {
   if (isDirectory) return 'folder';
   return KIND_BY_EXTENSION.get(path.extname(name).slice(1).toLowerCase()) || 'other';
@@ -680,9 +689,9 @@ ${browseScript}
       'ETag': etag,
       'Last-Modified': lastModified,
       'Cache-Control': 'no-cache',
-      // Shared HTML/SVG must never run script on the share's origin.
-      'Content-Security-Policy': 'sandbox',
     };
+    // Shared HTML/SVG must never run script on the share's origin.
+    if (needsSandbox(type)) headers['Content-Security-Policy'] = 'sandbox';
     const filename = path.basename(target.real);
     headers['Content-Disposition'] = `${query.has('download') ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(filename)}`;
 
