@@ -13,6 +13,16 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
+// Windows picks the taskbar icon and groups windows by this ID. It must match
+// the Squirrel shortcut (com.squirrel.<name>.<exe>) so a pinned Kexoz and the
+// running one share the Kexoz icon; dev builds get their own ID so Windows
+// uses the window icon instead of electron.exe's.
+if (process.platform === 'win32') {
+  app.setAppUserModelId(app.isPackaged ? 'com.squirrel.kexoz-desktop.kexoz' : 'dev.kexoz.desktop');
+}
+
+const APP_ICON = path.join(__dirname, '../assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'kexoz',
@@ -436,7 +446,7 @@ const createWindow = () => {
     minWidth: 960,
     minHeight: 640,
     title: 'Kexoz',
-    icon: path.join(__dirname, '../assets/icon.png'),
+    icon: APP_ICON,
     backgroundColor: '#202322',
     show: false,
     autoHideMenuBar: true,

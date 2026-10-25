@@ -141,6 +141,37 @@ test('downloads a folder as a valid zip without hidden files', async () => {
   assert.equal(fs.readFileSync(path.join(extracted, 'docs', 'readme.md'), 'utf8'), '# readme');
 });
 
+test('lists entries with their type for search and filters', async () => {
+  const html = (await request(readOnly.port, 'GET', '/')).body.toString();
+  assert.match(html, /id="search"/);
+  assert.match(html, /data-name="hello\.txt" data-kind="document" data-size="11"/);
+  assert.match(html, /data-name="docs" data-kind="folder"/);
+});
+
+test('searches subfolders without revealing hidden files', async () => {
+  const find = async (where, query) => JSON.parse((await request(readOnly.port, 'GET', `${where}?find=${encodeURIComponent(query)}`)).body.toString());
+  const readme = await find('/', 'READ');
+  assert.deepEqual(readme.results.map(r => r.path), ['docs/readme.md']);
+  assert.equal(readme.results[0].size, 8);
+  assert.deepEqual((await find('/', 'hello')).results, [], 'entries of the folder itself are left to the page');
+  assert.deepEqual((await find('/', 'plan')).results, [], 'locked folders stay hidden');
+  assert.deepEqual((await find('/', 'outside')).results, [], 'links are not followed');
+  assert.equal((await request(readOnly.port, 'GET', '/private/?find=plan')).status, 404);
+});
+
+test('zips only the selected entries', async () => {
+  const picks = ['hello.txt', 'docs', '.env', 'escape', '../outside.txt', 'node_modules'].map(name => `f=${encodeURIComponent(name)}`).join('&');
+  const res = await request(readOnly.port, 'GET', `/?zip&${picks}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-disposition'], /selected\.zip/);
+  const zipPath = path.join(workspace, 'selected.zip');
+  fs.writeFileSync(zipPath, res.body);
+  const entries = execFileSync('tar', ['-tf', zipPath], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean).sort();
+  assert.deepEqual(entries, ['docs/', 'docs/readme.md', 'hello.txt']);
+  assert.equal((await request(readOnly.port, 'GET', '/?zip&f=.env')).status, 404);
+  assert.equal((await request(readOnly.port, 'GET', '/?zip&f=escape')).status, 404);
+});
+
 test('read-only shares refuse writes', async () => {
   assert.equal((await request(readOnly.port, 'PUT', '/new.txt', { body: 'x' })).status, 405);
   assert.equal((await request(readOnly.port, 'DELETE', '/hello.txt')).status, 405);

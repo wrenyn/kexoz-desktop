@@ -4,12 +4,13 @@
 // Needs a running server (with Postgres) whose KEXOZ_ROOT_DOMAIN matches
 // KEXOZ_E2E_ROOT, e.g.:
 //   KEXOZ_E2E_API=http://127.0.0.1:19080 KEXOZ_E2E_ROOT=kexoz.test npm run e2e
+const crypto = require('node:crypto');
 const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { connectTunnel } = require('../src/tunnel.js');
+const { connectTunnel } = require(process.env.TUNNEL_MODULE || '../src/tunnel.js');
 const { createFolderServer } = require('../src/fileServer.js');
 
 const API = process.env.KEXOZ_E2E_API || 'http://127.0.0.1:9080';
@@ -207,6 +208,20 @@ async function folderSection(clientId) {
   check('resumable download (Range -> 206, 100 bytes)', r.status === 206 && r.body.length === 100, `${r.status} ${r.body.length}`);
   r = await request({ host: folderHost, pathName: '/?zip' });
   check('zip download', r.status === 200 && r.body.slice(0, 2).toString() === 'PK' && r.body.includes(Buffer.from('readme.txt')) && !r.body.includes(Buffer.from('.env')) && !r.body.includes(Buffer.from('plan.txt')), `${r.status} ${r.headers['content-type']}`);
+  const largeBytes = 48 * 1024 * 1024;
+  const large = crypto.randomBytes(largeBytes);
+  fs.writeFileSync(path.join(dir, 'large.bin'), large);
+  const largeStarted = Date.now();
+  r = await request({ host: folderHost, pathName: '/large.bin?download' });
+  const largeSeconds = (Date.now() - largeStarted) / 1000;
+  check(`large file arrives whole (48 MB in ${largeSeconds.toFixed(1)} s)`, r.status === 200 && r.body.length === largeBytes && r.body.equals(large), `${r.status} ${r.body.length}`);
+  fs.rmSync(path.join(dir, 'large.bin'));
+  r = await request({ host: folderHost, pathName: '/?find=guide' });
+  check('search finds files in subfolders', r.status === 200 && JSON.parse(r.body.toString()).results.some(item => item.path === 'docs/guide.md'), `${r.status} ${r.body.toString().slice(0, 120)}`);
+  r = await request({ host: folderHost, pathName: '/?find=plan' });
+  check('search never reveals locked folders', r.status === 200 && JSON.parse(r.body.toString()).results.length === 0, r.body.toString().slice(0, 120));
+  r = await request({ host: folderHost, pathName: '/?zip&f=readme.txt&f=.env' });
+  check('zip of selected files', r.status === 200 && r.body.includes(Buffer.from('readme.txt')) && !r.body.includes(Buffer.from('.env')) && !r.body.includes(Buffer.from('guide.md')), `${r.status}`);
   r = await request({ method: 'PUT', host: folderHost, pathName: '/upload.txt', body: 'nope' });
   check('read-only folder: upload blocked at the gateway (405)', r.status === 405, `${r.status}`);
   check('nothing written to disk', !fs.existsSync(path.join(dir, 'upload.txt')));

@@ -36,6 +36,40 @@ const MIME_TYPES = {
   '.pdf': 'application/pdf', '.zip': 'application/zip',
 };
 
+const KIND_EXTENSIONS = {
+  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico', 'heic', 'heif', 'tif', 'tiff', 'raw'],
+  video: ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v', 'wmv', 'flv', 'mpg', 'mpeg', '3gp'],
+  audio: ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus', 'wma'],
+  document: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'txt', 'md', 'csv', 'epub'],
+  archive: ['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'iso', 'dmg', 'exe', 'msi', 'apk', 'deb', 'rpm'],
+  code: ['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'html', 'htm', 'css', 'scss', 'go', 'py', 'rs', 'java', 'kt', 'c', 'h', 'cpp', 'hpp', 'cs', 'rb', 'php', 'swift', 'sh', 'ps1', 'bat', 'sql', 'yml', 'yaml', 'toml', 'xml', 'ini', 'log', 'ipynb'],
+};
+const KIND_BY_EXTENSION = new Map(Object.entries(KIND_EXTENSIONS).flatMap(([kind, list]) => list.map(ext => [ext, kind])));
+const KIND_LABELS = [['folder', 'Folders'], ['image', 'Images'], ['video', 'Videos'], ['audio', 'Audio'], ['document', 'Documents'], ['archive', 'Archives'], ['code', 'Code'], ['other', 'Other']];
+
+function kindOf(name, isDirectory) {
+  if (isDirectory) return 'folder';
+  return KIND_BY_EXTENSION.get(path.extname(name).slice(1).toLowerCase()) || 'other';
+}
+
+// Bigger reads mean fewer, fuller tunnel frames for large files.
+const READ_CHUNK = 256 * 1024;
+const ZIP32_LIMIT = 0xffffffff;
+const SEARCH_LIMIT = 200;
+const SEARCH_SCAN_LIMIT = 50_000;
+const SEARCH_TIME_MS = 3_000;
+const MAX_PICKED = 1_000;
+
+let faviconHref = '';
+try {
+  faviconHref = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '../assets/favicon-32.png')).toString('base64')}`;
+} catch {
+  // The page works without a tab icon.
+}
+
+const FOLDER_ICON = '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 6v5.5A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z"/></svg>';
+const FILE_ICON = '<svg class="ico ico-file" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5L12.5 5v8.5A1 1 0 0 1 11.5 14.5h-7.5A1 1 0 0 1 3 13.5v-11A1 1 0 0 1 4 1.5z"/></svg>';
+
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
 
 function escapeRegExp(value) {
@@ -190,87 +224,448 @@ function createFolderServer({ root, readOnly = true, excludes = DEFAULT_EXCLUDES
     const entries = await visibleEntries(target.real);
     const nonce = crypto.randomBytes(16).toString('base64');
     const base = target.relative ? `/${encodePath(target.relative)}/` : '/';
+    const folderName = target.segments[target.segments.length - 1] || 'Shared folder';
     const crumbs = ['<a href="/">root</a>'];
     target.segments.forEach((segment, index) => {
       crumbs.push(`<a href="/${encodePath(target.segments.slice(0, index + 1).join('/'))}/">${escapeHtml(segment)}</a>`);
     });
+
+    const kindCounts = new Map();
+    let folderCount = 0;
+    let fileCount = 0;
+    let totalBytes = 0;
     const rows = entries.map(entry => {
+      const kind = kindOf(entry.name, entry.isDirectory);
+      kindCounts.set(kind, (kindCounts.get(kind) || 0) + 1);
+      if (entry.isDirectory) folderCount++;
+      else {
+        fileCount++;
+        totalBytes += entry.size;
+      }
       const href = base + encodeURIComponent(entry.name) + (entry.isDirectory ? '/' : '');
       const actions = [];
       if (!entry.isDirectory) actions.push(`<a href="${href}?download">Download</a>`);
       else if (!entry.isLink) actions.push(`<a href="${href}?zip">Zip</a>`);
-      if (!readOnly && !entry.isLink) actions.push(`<button type="button" data-delete="${escapeHtml(href)}" data-name="${escapeHtml(entry.name)}">Delete</button>`);
-      return `<tr><td class="name"><a href="${href}">${entry.isDirectory ? '&#128193;' : '&#128196;'} ${escapeHtml(entry.name)}${entry.isDirectory ? '/' : ''}</a></td>` +
-        `<td>${entry.isDirectory ? '' : formatSize(entry.size)}</td><td>${entry.mtime.toISOString().slice(0, 16).replace('T', ' ')}</td>` +
-        `<td class="actions">${actions.join(' ')}</td></tr>`;
+      actions.push(`<button type="button" class="js-only" data-copy="${escapeHtml(href)}">Copy link</button>`);
+      if (!readOnly && !entry.isLink) actions.push(`<button type="button" class="danger" data-delete="${escapeHtml(href)}" data-name="${escapeHtml(entry.name)}">Delete</button>`);
+      const pickable = !(entry.isDirectory && entry.isLink);
+      return `<tr data-name="${escapeHtml(entry.name)}" data-kind="${kind}" data-size="${entry.isDirectory ? 0 : entry.size}" data-mtime="${entry.mtime.getTime()}">` +
+        `<td class="pick">${pickable ? `<input type="checkbox" value="${escapeHtml(entry.name)}" aria-label="Select ${escapeHtml(entry.name)}">` : ''}</td>` +
+        `<td class="name"><a href="${href}">${entry.isDirectory ? FOLDER_ICON : FILE_ICON}<span><span class="label">${escapeHtml(entry.name)}</span>${entry.isDirectory ? '/' : ''}</span></a></td>` +
+        `<td class="size">${entry.isDirectory ? '' : formatSize(entry.size)}</td>` +
+        `<td class="date"><time datetime="${entry.mtime.toISOString()}">${entry.mtime.toISOString().slice(0, 16).replace('T', ' ')}</time></td>` +
+        `<td class="actions">${actions.join('')}</td></tr>`;
     }).join('');
+
+    const summaryParts = [];
+    if (folderCount) summaryParts.push(`${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}`);
+    if (fileCount) summaryParts.push(`${fileCount} ${fileCount === 1 ? 'file' : 'files'}`);
+    if (fileCount) summaryParts.push(formatSize(totalBytes));
+    const summary = summaryParts.join(' · ');
+
+    const presentKinds = KIND_LABELS.filter(([kind]) => kindCounts.has(kind));
+    const chips = presentKinds.length > 1
+      ? `<div class="chips" role="group" aria-label="Show">` +
+        `<button type="button" data-kind-filter="all" aria-pressed="true">All <span>${entries.length}</span></button>` +
+        presentKinds.map(([kind, label]) => `<button type="button" data-kind-filter="${kind}" aria-pressed="false">${label} <span>${kindCounts.get(kind)}</span></button>`).join('') +
+        `</div>`
+      : '';
+
     const writeControls = readOnly ? '' : `
       <div class="write">
-        <label class="btn">Upload files<input id="upload" type="file" multiple hidden></label>
+        <label class="btn btn-ghost">Upload files<input id="upload" type="file" multiple hidden></label>
         <button type="button" class="btn btn-ghost" id="mkdir">New folder</button>
-        <span id="status"></span>
+        <span id="status" role="status"></span>
       </div>
       <script nonce="${nonce}">
-        const base = ${JSON.stringify(base)};
-        const status = document.getElementById('status');
-        const done = response => { if (!response.ok) throw new Error(response.status + ' ' + response.statusText); };
-        document.getElementById('upload').addEventListener('change', async event => {
-          try {
-            for (const file of event.target.files) {
-              status.textContent = 'Uploading ' + file.name + '...';
-              done(await fetch(base + encodeURIComponent(file.name), { method: 'PUT', body: file }));
-            }
-            location.reload();
-          } catch (error) { status.textContent = 'Upload failed: ' + error.message; }
-        });
-        document.getElementById('mkdir').addEventListener('click', async () => {
-          const name = prompt('Folder name');
-          if (!name) return;
-          try { done(await fetch(base + encodeURIComponent(name) + '/', { method: 'PUT' })); location.reload(); }
-          catch (error) { status.textContent = 'Could not create folder: ' + error.message; }
-        });
-        document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', async () => {
-          if (!confirm('Delete ' + button.dataset.name + '?')) return;
-          try { done(await fetch(button.dataset.delete, { method: 'DELETE' })); location.reload(); }
-          catch (error) { status.textContent = 'Could not delete: ' + error.message; }
-        }));
+        (() => {
+          const base = ${JSON.stringify(base)};
+          const status = document.getElementById('status');
+          const done = response => { if (!response.ok) throw new Error(response.status + ' ' + response.statusText); };
+          document.getElementById('upload').addEventListener('change', async event => {
+            try {
+              for (const file of event.target.files) {
+                status.textContent = 'Uploading ' + file.name + '...';
+                done(await fetch(base + encodeURIComponent(file.name), { method: 'PUT', body: file }));
+              }
+              location.reload();
+            } catch (error) { status.textContent = 'Upload failed: ' + error.message; }
+          });
+          document.getElementById('mkdir').addEventListener('click', async () => {
+            const name = prompt('Folder name');
+            if (!name) return;
+            try { done(await fetch(base + encodeURIComponent(name) + '/', { method: 'PUT' })); location.reload(); }
+            catch (error) { status.textContent = 'Could not create folder: ' + error.message; }
+          });
+          document.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', async () => {
+            if (!confirm('Delete ' + button.dataset.name + '?')) return;
+            try { done(await fetch(button.dataset.delete, { method: 'DELETE' })); location.reload(); }
+            catch (error) { status.textContent = 'Could not delete: ' + error.message; }
+          }));
+        })();
       </script>`;
+
+    const browseScript = `
+      <script nonce="${nonce}">
+        (() => {
+          document.documentElement.classList.add('js');
+          const base = ${JSON.stringify(base)};
+          const zipLimit = ${ZIP32_LIMIT};
+          const tbody = document.getElementById('rows');
+          const rows = Array.from(tbody.querySelectorAll('tr[data-name]'));
+          const search = document.getElementById('search');
+          const empty = document.getElementById('no-match');
+          const shownNote = document.getElementById('shown');
+          const deep = document.getElementById('deep');
+          const pickAll = document.getElementById('pick-all');
+          const selbar = document.getElementById('selbar');
+          const selText = document.getElementById('sel-text');
+          const selZip = document.getElementById('sel-zip');
+          const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+          const kinds = new Set(['all', 'folder', 'image', 'video', 'audio', 'document', 'archive', 'code', 'other']);
+          const params = new URLSearchParams(location.search);
+          let kind = kinds.has(params.get('type')) ? params.get('type') : 'all';
+          let sort = 'name';
+          let dir = 1;
+          const sortParam = (params.get('sort') || '').split('-');
+          if (['name', 'size', 'mtime'].includes(sortParam[0])) { sort = sortParam[0]; dir = sortParam[1] === 'desc' ? -1 : 1; }
+          search.value = params.get('q') || '';
+
+          const formatSize = bytes => {
+            if (bytes < 1024) return bytes + ' B';
+            const units = ['KB', 'MB', 'GB', 'TB'];
+            let value = bytes / 1024;
+            let unit = 0;
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+            return value.toFixed(value < 10 ? 1 : 0) + ' ' + units[unit];
+          };
+          const formatDate = ms => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+          const encodePath = value => value.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+          rows.forEach(row => { row.querySelector('time').textContent = formatDate(Number(row.dataset.mtime)); });
+
+          const highlight = (label, name, q) => {
+            label.textContent = '';
+            const at = q ? name.toLowerCase().indexOf(q) : -1;
+            if (at < 0) { label.textContent = name; return; }
+            const mark = document.createElement('mark');
+            mark.textContent = name.slice(at, at + q.length);
+            label.append(name.slice(0, at), mark, name.slice(at + q.length));
+          };
+
+          const syncUrl = () => {
+            const next = new URLSearchParams();
+            const q = search.value.trim();
+            if (q) next.set('q', q);
+            if (kind !== 'all') next.set('type', kind);
+            if (sort !== 'name' || dir !== 1) next.set('sort', sort + (dir === -1 ? '-desc' : ''));
+            const query = next.toString();
+            history.replaceState(null, '', location.pathname + (query ? '?' + query : ''));
+          };
+
+          const apply = () => {
+            const q = search.value.trim().toLowerCase();
+            const sorted = rows.slice().sort((a, b) => {
+              const aFolder = a.dataset.kind === 'folder';
+              const bFolder = b.dataset.kind === 'folder';
+              if (aFolder !== bFolder) return aFolder ? -1 : 1;
+              let order = sort === 'name' ? 0 : Number(a.dataset[sort]) - Number(b.dataset[sort]);
+              if (order === 0) order = collator.compare(a.dataset.name, b.dataset.name);
+              return order * dir;
+            });
+            let shown = 0;
+            for (const row of sorted) {
+              const match = (!q || row.dataset.name.toLowerCase().includes(q)) && (kind === 'all' || row.dataset.kind === kind);
+              row.hidden = !match;
+              if (match) shown++;
+              highlight(row.querySelector('.label'), row.dataset.name, q);
+              tbody.appendChild(row);
+            }
+            empty.hidden = shown > 0 || rows.length === 0;
+            shownNote.textContent = shown === rows.length ? '' : 'Showing ' + shown + ' of ' + rows.length;
+            document.querySelectorAll('th[data-sort]').forEach(th => {
+              th.setAttribute('aria-sort', th.dataset.sort === sort ? (dir === 1 ? 'ascending' : 'descending') : 'none');
+            });
+            document.querySelectorAll('[data-kind-filter]').forEach(chip => chip.setAttribute('aria-pressed', String(chip.dataset.kindFilter === kind)));
+            syncUrl();
+            updateSelection();
+          };
+
+          const boxes = () => rows.map(row => row.querySelector('.pick input')).filter(Boolean);
+          const updateSelection = () => {
+            const picked = boxes().filter(box => box.checked);
+            const visible = boxes().filter(box => !box.closest('tr').hidden);
+            pickAll.checked = visible.length > 0 && visible.every(box => box.checked);
+            pickAll.indeterminate = !pickAll.checked && visible.some(box => box.checked);
+            selbar.hidden = picked.length === 0;
+            if (!picked.length) return;
+            const pickedRows = picked.map(box => box.closest('tr'));
+            const hasFolder = pickedRows.some(row => row.dataset.kind === 'folder');
+            const bytes = pickedRows.reduce((sum, row) => sum + Number(row.dataset.size), 0);
+            selText.textContent = picked.length + ' selected' + (hasFolder ? '' : ' · ' + formatSize(bytes));
+            if (picked.length === 1 && !hasFolder) {
+              selZip.textContent = 'Download';
+              selZip.href = base + encodeURIComponent(picked[0].value) + '?download';
+              selZip.removeAttribute('aria-disabled');
+              selZip.title = '';
+              return;
+            }
+            selZip.textContent = 'Download as .zip';
+            selZip.href = base + '?zip&' + picked.map(box => 'f=' + encodeURIComponent(box.value)).join('&');
+            const tooBig = bytes > zipLimit;
+            selZip.toggleAttribute('aria-disabled', tooBig);
+            selZip.title = tooBig ? 'A zip can hold up to 4 GB. Download large files one at a time.' : '';
+          };
+
+          let deepTimer = 0;
+          let deepRequest = null;
+          const runDeepSearch = () => {
+            clearTimeout(deepTimer);
+            if (deepRequest) deepRequest.abort();
+            const q = search.value.trim();
+            if (q.length < 2) { deep.hidden = true; deep.textContent = ''; return; }
+            deepTimer = setTimeout(async () => {
+              deepRequest = new AbortController();
+              deep.hidden = false;
+              deep.innerHTML = '<p class="deep-status">Searching subfolders...</p>';
+              try {
+                const response = await fetch(base + '?find=' + encodeURIComponent(q), { signal: deepRequest.signal, headers: { Accept: 'application/json' } });
+                if (!response.ok) throw new Error(String(response.status));
+                const data = await response.json();
+                renderDeep(data, q.toLowerCase());
+              } catch (error) {
+                if (error.name === 'AbortError') return;
+                deep.innerHTML = '<p class="deep-status">Could not search subfolders.</p>';
+              }
+            }, 300);
+          };
+          const renderDeep = (data, q) => {
+            deep.textContent = '';
+            if (!data.results.length) { deep.hidden = true; return; }
+            const heading = document.createElement('h2');
+            heading.textContent = 'In subfolders';
+            const list = document.createElement('table');
+            const body = document.createElement('tbody');
+            for (const item of data.results) {
+              const row = document.createElement('tr');
+              const href = '/' + encodePath(item.path) + (item.dir ? '/' : '');
+              const name = document.createElement('td');
+              name.className = 'name';
+              const link = document.createElement('a');
+              link.href = href;
+              const label = document.createElement('span');
+              label.className = 'label';
+              highlight(label, item.name, q);
+              const where = document.createElement('span');
+              where.className = 'where';
+              const parent = item.path.split('/').slice(0, -1).join('/');
+              where.textContent = parent ? parent + '/' : '';
+              const text = document.createElement('span');
+              text.append(where, label, item.dir ? '/' : '');
+              link.append(text);
+              name.append(link);
+              const size = document.createElement('td');
+              size.className = 'size';
+              size.textContent = item.dir ? '' : formatSize(item.size);
+              const date = document.createElement('td');
+              date.className = 'date';
+              date.textContent = formatDate(item.mtime);
+              const actions = document.createElement('td');
+              actions.className = 'actions';
+              const action = document.createElement('a');
+              action.href = href + (item.dir ? '?zip' : '?download');
+              action.textContent = item.dir ? 'Zip' : 'Download';
+              actions.append(action);
+              row.append(name, size, date, actions);
+              body.append(row);
+            }
+            list.append(body);
+            deep.append(heading, list);
+            if (data.truncated) {
+              const more = document.createElement('p');
+              more.className = 'deep-status';
+              more.textContent = 'Showing the first ' + data.results.length + ' matches. Try a longer search.';
+              deep.append(more);
+            }
+          };
+
+          search.addEventListener('input', () => { apply(); runDeepSearch(); });
+          search.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && search.value) { search.value = ''; apply(); runDeepSearch(); }
+          });
+          document.addEventListener('keydown', event => {
+            if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+            const tag = (document.activeElement && document.activeElement.tagName) || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+            event.preventDefault();
+            search.focus();
+          });
+          document.querySelectorAll('[data-kind-filter]').forEach(chip => chip.addEventListener('click', () => { kind = chip.dataset.kindFilter; apply(); }));
+          document.querySelectorAll('th[data-sort] button').forEach(button => button.addEventListener('click', () => {
+            const next = button.closest('th').dataset.sort;
+            if (next === sort) dir = -dir;
+            else { sort = next; dir = next === 'name' ? 1 : -1; }
+            apply();
+          }));
+          pickAll.addEventListener('change', () => {
+            boxes().forEach(box => { if (!box.closest('tr').hidden) box.checked = pickAll.checked; });
+            updateSelection();
+          });
+          tbody.addEventListener('change', event => { if (event.target.matches('.pick input')) updateSelection(); });
+          document.getElementById('sel-clear').addEventListener('click', () => { boxes().forEach(box => { box.checked = false; }); updateSelection(); });
+          selZip.addEventListener('click', event => { if (selZip.hasAttribute('aria-disabled')) event.preventDefault(); });
+          document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(new URL(button.dataset.copy, location.href).href);
+              button.textContent = 'Copied';
+            } catch {
+              button.textContent = 'Copy failed';
+            }
+            setTimeout(() => { button.textContent = 'Copy link'; }, 1500);
+          }));
+
+          apply();
+          if (search.value) runDeepSearch();
+        })();
+      </script>`;
+
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(target.relative || 'Shared folder')} - Kexoz</title>
+<title>${escapeHtml(folderName)} - Kexoz</title>
+${faviconHref ? `<link rel="icon" type="image/png" href="${faviconHref}">` : ''}
 <style nonce="${nonce}">
   body{margin:0;font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#202322;color:#E9EDE6}
   ::selection{background:rgba(198,243,107,.35)}
-  main{max-width:960px;margin:0 auto;padding:32px 20px}
+  main{max-width:1040px;margin:0 auto;padding:32px 20px 96px}
   header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
-  .crumbs{font:600 16px/1.4 "Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01em}.crumbs a{color:#FFFFFF;text-decoration:none}.crumbs a:hover{color:#C6F36B}
+  .crumbs{font:600 16px/1.4 "Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:-.01em;word-break:break-all}.crumbs a{color:#FFFFFF;text-decoration:none}.crumbs a:hover{color:#C6F36B}
   .crumbs span{color:#7D877F;margin:0 6px}
+  .head-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   .badge{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1px solid #48514C;color:#A7B0A9}
+  .toolbar{display:none;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+  .js .toolbar{display:flex}
+  .search{flex:1 1 260px;position:relative}
+  .search input{width:100%;box-sizing:border-box;height:38px;padding:0 44px 0 12px;background:#272B29;border:1px solid #343B37;border-radius:8px;color:#E9EDE6;font:inherit}
+  .search input::placeholder{color:#7D877F}
+  .search input:focus{outline:none;border-color:#C6F36B}
+  .search kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:11px "IBM Plex Mono",ui-monospace,monospace;color:#7D877F;border:1px solid #48514C;border-radius:4px;padding:0 5px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chips button{height:30px;padding:0 11px;border-radius:999px;border:1px solid #343B37;background:transparent;color:#A7B0A9;font:500 12.5px Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer}
+  .chips button span{color:#7D877F;margin-left:2px}
+  .chips button:hover{border-color:#48514C;color:#E9EDE6}
+  .chips button[aria-pressed="true"]{background:#C6F36B;border-color:#C6F36B;color:#202322}.chips button[aria-pressed="true"] span{color:#202322;opacity:.7}
   table{width:100%;border-collapse:collapse;background:#272B29;border:1px solid #343B37;border-radius:10px;overflow:hidden}
+  th{padding:8px 12px;text-align:left;font:600 11px Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#7D877F;border-bottom:1px solid #343B37;white-space:nowrap}
+  th button{background:none;border:none;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;cursor:pointer}
+  th button:hover,th[aria-sort="ascending"] button,th[aria-sort="descending"] button{color:#E9EDE6}
+  th[aria-sort="ascending"] button::after{content:" \\2191"}th[aria-sort="descending"] button::after{content:" \\2193"}
   td{padding:9px 12px;border-top:1px solid #343B37;color:#A7B0A9;white-space:nowrap;font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace;font-size:12.5px}
-  tr:first-child td{border-top:none}td.name{width:100%;white-space:normal;word-break:break-all;font-family:inherit;font-size:14px}
-  tr:hover td{background:rgba(233,237,230,.03)}
-  td.name a{color:#E9EDE6;text-decoration:none}td.name a:hover{color:#C6F36B}
-  .actions a,.actions button{color:#C6F36B;background:none;border:none;font:inherit;cursor:pointer;padding:0;margin-left:10px;text-decoration:none}
-  .actions a:hover{text-decoration:underline}
-  .actions button{color:#F87171}
-  .btn{display:inline-block;background:#C6F36B;color:#202322;border:none;border-radius:8px;padding:7px 12px;font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;text-decoration:none}
+  tbody tr:first-child td{border-top:none}
+  td.name{width:100%;white-space:normal;word-break:break-all;font-family:inherit;font-size:14px}
+  tbody tr:hover td{background:rgba(233,237,230,.03)}
+  td.name a{color:#E9EDE6;text-decoration:none;display:inline-flex;align-items:flex-start;gap:8px}td.name a:hover{color:#C6F36B}
+  .ico{width:16px;height:16px;flex:none;margin-top:2px;fill:#C6F36B;opacity:.85}.ico-file{fill:none;stroke:#7D877F;stroke-width:1.2}
+  .where{color:#7D877F}
+  mark{background:rgba(198,243,107,.25);color:inherit;border-radius:2px}
+  .pick{display:none;width:1px;padding-right:0}
+  .js .pick{display:table-cell}
+  .pick input{accent-color:#C6F36B;width:15px;height:15px;margin:0;vertical-align:middle;cursor:pointer}
+  .actions{text-align:right}
+  .actions a,.actions button{color:#C6F36B;background:none;border:none;font:inherit;cursor:pointer;padding:0;margin-left:14px;text-decoration:none}
+  .actions a:hover,.actions button:hover{text-decoration:underline}
+  .actions .danger{color:#F87171}
+  .js-only{display:none}.js .js-only{display:inline}
+  .btn{display:inline-flex;align-items:center;height:34px;box-sizing:border-box;background:#C6F36B;color:#202322;border:1px solid #C6F36B;border-radius:8px;padding:0 12px;font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;cursor:pointer;text-decoration:none}
   .btn:hover{background:#D3F78A}
-  .btn-ghost{background:transparent;color:#E9EDE6;border:1px solid #48514C}.btn-ghost:hover{background:#343B37}
-  a:focus-visible,button:focus-visible{outline:2px solid #C6F36B;outline-offset:2px}
+  .btn-ghost{background:transparent;color:#E9EDE6;border-color:#48514C}.btn-ghost:hover{background:#343B37}
+  .btn[aria-disabled]{opacity:.45;cursor:not-allowed}
+  a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid #C6F36B;outline-offset:2px}
   .write{display:flex;gap:8px;align-items:center;margin-bottom:12px}#status{color:#A7B0A9;font-size:13px}
-  .empty{padding:28px;text-align:center;color:#7D877F}
+  .empty{padding:28px;text-align:center;color:#7D877F;font-family:inherit;font-size:14px}
+  .foot{display:flex;justify-content:space-between;gap:12px;margin-top:10px;color:#7D877F;font-size:12.5px}
+  #deep{margin-top:28px}#deep h2{font:600 13px Inter,ui-sans-serif,system-ui,sans-serif;color:#A7B0A9;margin:0 0 10px}
+  .deep-status{color:#7D877F;font-size:13px;margin:10px 0 0}
+  .selbar{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:10px;align-items:center;padding:8px 8px 8px 16px;background:#2E3330;border:1px solid #48514C;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.4);white-space:nowrap}
+  .selbar[hidden]{display:none}
+  #sel-text{color:#E9EDE6;font-size:13px;margin-right:4px}
+  @media (max-width:640px){td.date,th.date{display:none}.js .actions [data-copy],.search kbd{display:none}.actions a,.actions button{margin-left:10px}td{padding:9px 8px}main{padding:20px 12px 96px}}
 </style></head><body><main>
 <header><div class="crumbs">${crumbs.join('<span>/</span>')}</div>
-<div><span class="badge">${readOnly ? 'Read-only' : 'Read &amp; write'}</span>${limit > 0 ? ` <span class="badge">${limitReached() ? 'No downloads left' : `${limit - downloads} of ${limit} downloads left`}</span>` : ''} <a class="btn" href="${base}?zip">Download folder (.zip)</a></div></header>
+<div class="head-actions"><span class="badge">${readOnly ? 'Read-only' : 'Read &amp; write'}</span>${limit > 0 ? `<span class="badge">${limitReached() ? 'No downloads left' : `${limit - downloads} of ${limit} downloads left`}</span>` : ''}${entries.length ? `<a class="btn" href="${base}?zip">Download all (.zip)</a>` : ''}</div></header>
 ${writeControls}
-<table>${rows || '<tr><td class="empty" colspan="4">This folder is empty.</td></tr>'}</table>
-</main></body></html>`;
+<div class="toolbar">
+  <div class="search"><input id="search" type="search" placeholder="Search files and folders" aria-label="Search files and folders" autocomplete="off" spellcheck="false"><kbd>/</kbd></div>
+  ${chips}
+</div>
+<table>
+  <thead><tr><th class="pick"><input type="checkbox" id="pick-all" aria-label="Select all shown"></th><th data-sort="name" aria-sort="ascending"><button type="button">Name</button></th><th data-sort="size"><button type="button">Size</button></th><th data-sort="mtime" class="date"><button type="button">Modified</button></th><th></th></tr></thead>
+  <tbody id="rows">${rows || '<tr><td class="empty" colspan="5">This folder is empty.</td></tr>'}</tbody>
+  <tbody><tr id="no-match" hidden><td class="empty" colspan="5">Nothing here matches. Clear the search or pick another type.</td></tr></tbody>
+</table>
+<div class="foot"><span>${summary}</span><span id="shown" aria-live="polite"></span></div>
+<section id="deep" hidden aria-live="polite"></section>
+<div class="selbar" id="selbar" hidden><span id="sel-text"></span><button type="button" class="btn btn-ghost" id="sel-clear">Clear</button><a class="btn" id="sel-zip" href="#">Download as .zip</a></div>
+</main>
+${browseScript}
+</body></html>`;
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      'Content-Security-Policy': `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     });
     res.end(req.method === 'HEAD' ? undefined : html);
+  }
+
+  // Finds names containing the query anywhere below the folder, skipping the
+  // folder's own entries (the page already filters those). Bounded by result
+  // count, entries scanned and time so a huge tree can't stall the share.
+  async function searchBelow(target, query) {
+    const needle = query.toLowerCase();
+    const results = [];
+    const deadline = Date.now() + SEARCH_TIME_MS;
+    const queue = [];
+    let scanned = 0;
+    let truncated = false;
+    const enqueue = async (directory, relative, top) => {
+      let dirents;
+      try {
+        dirents = await fsp.readdir(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const dirent of dirents) {
+        scanned++;
+        if (dirent.isSymbolicLink()) continue;
+        const childRelative = relative ? `${relative}/${dirent.name}` : dirent.name;
+        if (isExcluded(rules, childRelative)) continue;
+        const absolute = path.join(directory, dirent.name);
+        if (dirent.isDirectory()) queue.push({ directory: absolute, relative: childRelative });
+        else if (!dirent.isFile()) continue;
+        if (top || !dirent.name.toLowerCase().includes(needle)) continue;
+        if (results.length >= SEARCH_LIMIT) {
+          truncated = true;
+          return;
+        }
+        const stat = await fsp.stat(absolute).catch(() => null);
+        if (!stat) continue;
+        results.push({ path: childRelative, name: dirent.name, dir: dirent.isDirectory(), size: dirent.isDirectory() ? 0 : stat.size, mtime: stat.mtime.getTime() });
+      }
+    };
+    await enqueue(target.real, target.relative, true);
+    while (queue.length && !truncated) {
+      if (scanned >= SEARCH_SCAN_LIMIT || Date.now() > deadline) {
+        truncated = true;
+        break;
+      }
+      const next = queue.shift();
+      await enqueue(next.directory, next.relative, false);
+    }
+    return { results, truncated };
+  }
+
+  async function serveSearch(req, res, target, query) {
+    const trimmed = String(query || '').trim().slice(0, 200);
+    const body = trimmed ? await searchBelow(target, trimmed) : { results: [], truncated: false };
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(req.method === 'HEAD' ? undefined : JSON.stringify(body));
   }
 
   async function serveFile(req, res, target, stat, query) {
@@ -326,7 +721,7 @@ ${writeControls}
       res.end();
       return;
     }
-    const stream = fs.createReadStream(target.real, { start, end });
+    const stream = fs.createReadStream(target.real, { start, end, highWaterMark: READ_CHUNK });
     stream.on('error', () => res.destroy());
     res.on('close', () => stream.destroy());
     stream.pipe(res);
@@ -335,8 +730,28 @@ ${writeControls}
   // Streams a folder as a stored (uncompressed) zip with data descriptors, so
   // nothing is buffered and the download starts immediately. Symlinks are
   // skipped to avoid loops; zip32 limits are enforced rather than corrupting.
-  async function serveZip(req, res, target) {
-    const zipName = `${target.segments[target.segments.length - 1] || path.basename(rootReal) || 'share'}.zip`;
+  // `picked` limits the zip to those names directly inside the folder.
+  async function serveZip(req, res, target, picked = []) {
+    const folderName = target.segments[target.segments.length - 1] || path.basename(rootReal) || 'share';
+    let items = null;
+    if (picked.length) {
+      if (picked.length > MAX_PICKED) return send(res, 400, 'Too many items selected');
+      items = [];
+      let bytes = 0;
+      for (const name of new Set(picked)) {
+        if (!validName(name) || /[\\/]/.test(name)) continue;
+        if (isExcluded(rules, target.relative ? `${target.relative}/${name}` : name)) continue;
+        const absolute = path.join(target.real, name);
+        const stat = await fsp.lstat(absolute).catch(() => null);
+        if (!stat || stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) continue;
+        if (!(await realInside(absolute))) continue;
+        if (stat.isFile()) bytes += stat.size;
+        items.push({ name, absolute, stat });
+      }
+      if (!items.length) return send(res, 404, 'Not found');
+      if (bytes > ZIP32_LIMIT) return send(res, 413, 'A zip can hold up to 4 GB. Download large files one at a time.');
+    }
+    const zipName = items ? `${folderName}-selected.zip` : `${folderName}.zip`;
     if (req.method !== 'HEAD') {
       if (limitReached()) return send(res, 410, 'This share has reached its download limit.');
       countDownload();
@@ -385,7 +800,7 @@ ${writeControls}
       let crc = 0;
       let size = 0;
       if (absolute) {
-        for await (const chunk of fs.createReadStream(absolute)) {
+        for await (const chunk of fs.createReadStream(absolute, { highWaterMark: READ_CHUNK })) {
           crc = crc32(crc, chunk);
           size += chunk.length;
           await write(chunk);
@@ -424,7 +839,18 @@ ${writeControls}
     };
 
     try {
-      await walk(target.real, '');
+      if (items) {
+        for (const item of items) {
+          if (item.stat.isDirectory()) {
+            await addEntry(`${item.name}/`, null, item.stat);
+            await walk(item.absolute, item.name);
+          } else {
+            await addEntry(item.name, item.absolute, item.stat);
+          }
+        }
+      } else {
+        await walk(target.real, '');
+      }
       const centralStart = offset;
       for (const entry of central) {
         const record = Buffer.alloc(46);
@@ -565,7 +991,9 @@ ${writeControls}
         res.writeHead(301, { Location: `${urlPath}/${url.search}` });
         return res.end();
       }
-      return url.searchParams.has('zip') ? serveZip(req, res, resolved) : serveListing(req, res, resolved);
+      if (url.searchParams.has('zip')) return serveZip(req, res, resolved, url.searchParams.getAll('f'));
+      if (url.searchParams.has('find')) return serveSearch(req, res, resolved, url.searchParams.get('find'));
+      return serveListing(req, res, resolved);
     }
     if (!stat.isFile()) return send(res, 404, 'Not found');
     return serveFile(req, res, resolved, stat, url.searchParams);

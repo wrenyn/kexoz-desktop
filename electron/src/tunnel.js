@@ -1,7 +1,79 @@
 const WebSocket = require('ws');
 const { createWebSocketStream } = require('ws');
 const { Server } = require('yamux-js');
+const { Stream: YamuxStream } = require('yamux-js/lib/stream');
+const { Session: YamuxSession } = require('yamux-js/lib/session');
+const { STREAM_STATES, FLAGS, TYPES } = require('yamux-js/lib/constants');
 const net = require('node:net');
+
+// How much each side may have in flight per stream. yamux's 256 KB default
+// caps one download at about 2.5 MB/s on a 100 ms link. The server only
+// grants the larger window to clients that ask for it with window=2m.
+const STREAM_WINDOW = 2 * 1024 * 1024;
+const WINDOW_PARAM = '2m';
+
+function withLargeWindow(tunnelUrl) {
+  const url = new URL(tunnelUrl);
+  url.searchParams.set('window', WINDOW_PARAM);
+  return url.toString();
+}
+
+// yamux-js drops the window a peer grants in the frame that opens a stream,
+// so a server offering more than 256 KB would never hear from us again.
+if (!YamuxSession.prototype.kexozOpenWindow) {
+  const handle = YamuxSession.prototype.handleStreamMessage;
+  YamuxSession.prototype.kexozOpenWindow = true;
+  YamuxSession.prototype.handleStreamMessage = function (header, packet, encoding) {
+    const result = handle.call(this, header, packet, encoding);
+    if (header.flags === FLAGS.SYN && header.type === TYPES.WindowUpdate && header.length > 0) {
+      const stream = this.streams.get(header.streamID);
+      if (stream) stream.sendWindow += header.length;
+    }
+    return result;
+  };
+}
+
+// yamux-js re-checks a full send window every 100 ms, so a large download
+// stalls each time the window fills. Resume as soon as the peer grants more.
+if (!YamuxStream.prototype.kexozWindowWait) {
+  const writeChunk = YamuxStream.prototype._write;
+  const growWindow = YamuxStream.prototype.incrSendWindow;
+  const forceClose = YamuxStream.prototype.forceClose;
+  const open = new Set([STREAM_STATES.Init, STREAM_STATES.SYNSent, STREAM_STATES.SYNReceived, STREAM_STATES.Established]);
+  const resume = (stream) => {
+    const pending = stream.kexozPending;
+    if (!pending) return;
+    stream.kexozPending = null;
+    clearTimeout(pending.timer);
+    writeChunk.call(stream, pending.chunk, pending.encoding, pending.cb);
+  };
+  YamuxStream.prototype.kexozWindowWait = true;
+  YamuxStream.prototype._write = function (chunk, encoding, cb) {
+    if (this.sendWindow > 0 || !open.has(this.state)) return writeChunk.call(this, chunk, encoding, cb);
+    // A slow fallback in case a window update is ever missed.
+    this.kexozPending = { chunk, encoding, cb, timer: setTimeout(() => resume(this), 1000) };
+  };
+  YamuxStream.prototype.incrSendWindow = function (hdr) {
+    growWindow.call(this, hdr);
+    if (this.sendWindow > 0 || !open.has(this.state)) resume(this);
+  };
+  YamuxStream.prototype.forceClose = function () {
+    forceClose.call(this);
+    resume(this);
+  };
+}
+
+// Forwards one direction, pausing the source while the destination is full
+// so a large file isn't read into memory faster than the tunnel can send it.
+function forward(source, destination, chunk) {
+  if (destination.write(chunk) || source.kexozWaiting) return;
+  source.kexozWaiting = true;
+  source.pause();
+  destination.once('drain', () => {
+    source.kexozWaiting = false;
+    source.resume();
+  });
+}
 
 // The server pings every 54s; two missed pings means the link is dead even if
 // the socket never reported an error (sleep, Wi-Fi switch, NAT timeout).
@@ -80,7 +152,7 @@ function pipeTcp(stream, port, onLogEntry) {
         }
       } catch {}
     }
-    localSocket.write(data);
+    forward(stream, localSocket, data);
   });
 
   localSocket.on('data', (data) => {
@@ -101,12 +173,25 @@ function pipeTcp(stream, port, onLogEntry) {
         }
       } catch {}
     }
-    stream.write(data);
+    forward(localSocket, stream, data);
   });
 
+  // A second FIN is a protocol error that makes the server drop the session.
+  let finSent = false;
+  const closeStream = () => {
+    if (finSent) return;
+    finSent = true;
+    stream.close();
+  };
   stream.on('close', () => localSocket.destroy());
-  localSocket.on('close', () => stream.close());
-  localSocket.on('error', () => stream.close());
+  // The local server may hang up while the tunnel is still sending its last
+  // bytes; finish sending before closing or the download is cut short.
+  stream.once('finish', closeStream);
+  localSocket.on('close', () => {
+    if (finSent || stream.destroyed || stream.writableEnded) return closeStream();
+    stream.end();
+  });
+  localSocket.on('error', closeStream);
   stream.on('error', () => localSocket.destroy());
 }
 
@@ -189,7 +274,7 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
     teardown();
     onStateChange('connecting');
     lastError = '';
-    const socket = new WebSocket(tunnelUrl);
+    const socket = new WebSocket(withLargeWindow(tunnelUrl));
     ws = socket;
 
     socket.on('open', () => {
@@ -207,7 +292,7 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
         }
         if (tunnelType === 'udp') pipeUdp(stream, currentPort);
         else pipeTcp(stream, currentPort, onLogEntry);
-      });
+      }, { maxStreamWindowSize: STREAM_WINDOW });
       yamux.on('error', () => socket.terminate());
       session = yamux;
       duplex.pipe(yamux).pipe(duplex);
