@@ -149,6 +149,11 @@ export const TIER_LABELS: Record<Tier, string> = {
   anonymous: 'Guest', verified: 'Free', pro: 'Pro', pro_plus: 'Pro+',
 }
 
+/** Mirrors the server's per-plan share limit; the server still enforces it. */
+export const SHARE_LIMITS: Record<Tier, number> = {
+  anonymous: 3, verified: 5, pro: 25, pro_plus: 100,
+}
+
 export type LinkStatus = {
   linked: boolean
   email: string

@@ -1,6 +1,5 @@
-import { TIER_LABELS, tierOf, type ClientSession } from '../../lib/api'
+import { SHARE_LIMITS, TIER_LABELS, tierOf, type ClientSession } from '../../lib/api'
 import { NAV_ITEMS, type Page } from '../../lib/navigation'
-import { formatBytes } from '../../lib/utils'
 import Logo from '../ui/Logo'
 
 type Props = {
@@ -9,16 +8,16 @@ type Props = {
   onNewShare: () => void
   session: ClientSession
   liveShares: number
+  shareCount: number
   requestCount: number
   onLogin: () => void
   verifying: boolean
 }
 
-export default function Sidebar({ activePage, onNavigate, onNewShare, session, liveShares, requestCount, onLogin, verifying }: Props) {
+export default function Sidebar({ activePage, onNavigate, onNewShare, session, liveShares, shareCount, requestCount, onLogin, verifying }: Props) {
   const tier = tierOf(session)
-  const used = session.bandwidthUsed
-  const limit = session.bandwidthLimit
-  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
+  const limit = SHARE_LIMITS[tier]
+  const pct = Math.min(100, (shareCount / limit) * 100)
   const meterTone = pct >= 100 ? 'full' : pct >= 80 ? 'high' : ''
   const email = session.ownerEmail
 
@@ -66,13 +65,13 @@ export default function Sidebar({ activePage, onNavigate, onNewShare, session, l
       </nav>
 
       <div className="ps-sidebar-footer">
-        <div className="ps-usage" title="Data through your shares this month">
+        <div className="ps-usage">
           <div className="ps-usage-head">
             <span>{TIER_LABELS[tier]} plan</span>
-            <span>{formatBytes(used)} of {formatBytes(limit)}</span>
+            <span>{shareCount} of {limit} shares</span>
           </div>
-          <div className="ps-usage-bar" role="progressbar" aria-label="Data used this month" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
-            <div className={meterTone} style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%` }} />
+          <div className="ps-usage-bar" role="progressbar" aria-label="Shares used" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+            <div className={meterTone} style={{ width: `${pct}%` }} />
           </div>
         </div>
 

@@ -780,6 +780,7 @@ export default function App() {
             onNewShare={() => setShowNewTunnel(true)}
             session={session}
             liveShares={persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length}
+            shareCount={persistentTunnels.length}
             requestCount={totalRequests}
             onLogin={() => void startGoogleVerify()}
             verifying={verifying}
