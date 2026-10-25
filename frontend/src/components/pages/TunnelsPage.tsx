@@ -286,7 +286,7 @@ export default function TunnelsPage({
                         {type === 'e2e' && (
                           <div>
                             <div className="ps-settings-row-desc" style={{ marginBottom: 6 }}>Run this with the Kexoz CLI for end-to-end encryption</div>
-                            <div className="ps-code">kexoz proxy --port {portInput || tunnel.port} --subdomain {tunnel.subdomain}</div>
+                            <div className="ps-code">kexoz e2e {portInput || tunnel.port} --subdomain {tunnel.subdomain}</div>
                           </div>
                         )}
                       </div>
