@@ -36,6 +36,8 @@ import GateScreen from './components/screens/GateScreen'
 import SubdomainScreen from './components/screens/SubdomainScreen'
 import DashboardPage from './components/pages/DashboardPage'
 import TunnelsPage from './components/pages/TunnelsPage'
+import ProjectsPage from './components/pages/ProjectsPage'
+import type { ShareControls } from './components/shares/ShareList'
 import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
@@ -85,9 +87,7 @@ export default function App() {
   const [step, setStep] = useState<FlowStep>('loading')
   const [activePage, setActivePage] = useState<Page>(() => {
     // Return to the page the operator was last on after a restart.
-    const stored = window.localStorage.getItem('kexoz-active-page')
-    // Projects now live on the Shares page.
-    const saved = stored === 'projects' ? 'tunnels' : stored
+    const saved = window.localStorage.getItem('kexoz-active-page')
     return (NAV_ITEMS.some(item => item.id === saved) ? saved : 'dashboard') as Page
   })
   const [session, setSession] = useState<ClientSession | null>(null)
@@ -754,24 +754,14 @@ export default function App() {
     }
   }
 
-  const moveShare = async (tunnel: PersistentTunnel, projectId: string) => {
+  const createProject = async (name: string, tunnelIds: string[]): Promise<string | null> => {
     try {
-      await projectsApi.move(tunnel.id, projectId)
-      const project = projectsApi.projects.find(item => item.id === projectId)
-      toast.success(project ? `Moved to ${project.name}` : 'Removed from its project')
-    } catch (err) {
-      toast.error(extractError(err))
-    }
-  }
-
-  const createProject = async (name: string, tunnelIds: string[]): Promise<boolean> => {
-    try {
-      await projectsApi.create(name, tunnelIds)
+      const id = await projectsApi.create(name, tunnelIds)
       toast.success(`Created ${name}`)
-      return true
+      return id || null
     } catch (err) {
       toast.error(extractError(err))
-      return false
+      return null
     }
   }
 
@@ -789,7 +779,7 @@ export default function App() {
   const removeProject = async (project: Project): Promise<boolean> => {
     const accepted = await confirm({
       title: `Delete ${project.name}?`,
-      message: <>Its shares keep running and move to <strong>Not in a project</strong>. <code>kexoz start {project.name}</code> stops working.</>,
+      message: <>Its shares aren’t deleted and stay on the Shares page. <code>kexoz start {project.name}</code> stops working.</>,
       confirmLabel: 'Delete project',
       tone: 'danger',
     })
@@ -868,9 +858,7 @@ export default function App() {
       const isFolder = request.tunnelType === 'folder'
       // Folder shares get their real port from the local file server at start.
       const port = isFolder ? 1 : request.port
-      const newProject = request.newProjectName?.toLowerCase()
-      const reused = newProject ? projectsApi.projects.find(project => project.name.toLowerCase() === newProject) : undefined
-      const projectId = reused?.id ?? (request.newProjectName ? await projectsApi.create(request.newProjectName) : request.projectId)
+      const projectId = request.projectId
       const created = await createTunnel(session.id, {
         name: request.name,
         projectId: projectId || undefined,
@@ -939,6 +927,29 @@ export default function App() {
     usedBy: persistentTunnels.filter(tunnel => tunnel.subdomain === name).map(shareLabel),
   }))
 
+  const shareControls = (clientId: string): ShareControls => ({
+    portInput,
+    setPortInput,
+    onPortSubmit: handlePortSubmit,
+    isBusy,
+    routeRules,
+    onRouteRulesChange: setRouteRules,
+    routePortStatus,
+    persistentTunnels,
+    selectedTunnelId,
+    onSelectTunnel: selectPersistentTunnel,
+    onStartTunnel: tunnel => void startPersistentTunnel(tunnel),
+    onStopTunnel: tunnel => void stopPersistentTunnel(tunnel),
+    onDeleteTunnel: tunnel => void removePersistentTunnel(tunnel),
+    onPauseTunnel: (tunnel, paused) => void setPersistentTunnelPaused(tunnel, paused),
+    folderShares,
+    portListening,
+    onAccessChange: handleAccessChange,
+    onRenameTunnel: (tunnel, name) => void renameTunnel(tunnel, name),
+    clientId,
+    onTunnelUpdated: handleTunnelUpdated,
+  })
+
   const handleLogout = async () => {
     const accepted = await confirm({
       title: 'Sign out of Kexoz?',
@@ -958,8 +969,7 @@ export default function App() {
         <NewShareModal
           onClose={() => setShowNewTunnel(false)}
           addresses={addressOptions}
-          projects={projectsApi.projects}
-          defaultProjectId={newShareProject}
+          project={projectsApi.projects.find(project => project.id === newShareProject)}
           onManageAddresses={() => { setShowNewTunnel(false); setActivePage('domains') }}
           onSubmit={createShare}
         />
@@ -1025,34 +1035,18 @@ export default function App() {
             )}
 
             {activePage === 'tunnels' && (
-              <TunnelsPage
-                portInput={portInput}
-                setPortInput={setPortInput}
-                onPortSubmit={handlePortSubmit}
-                isBusy={isBusy}
-                routeRules={routeRules}
-                onRouteRulesChange={setRouteRules}
-                routePortStatus={routePortStatus}
-                persistentTunnels={persistentTunnels}
-                selectedTunnelId={selectedTunnelId}
-                onSelectTunnel={selectPersistentTunnel}
-                onStartTunnel={(tunnel) => void startPersistentTunnel(tunnel)}
-                onStopTunnel={(tunnel) => void stopPersistentTunnel(tunnel)}
-                onDeleteTunnel={(tunnel) => void removePersistentTunnel(tunnel)}
-                onPauseTunnel={(tunnel, paused) => void setPersistentTunnelPaused(tunnel, paused)}
-                folderShares={folderShares}
-                portListening={portListening}
-                onNewTunnel={openNewShare}
-                onAccessChange={handleAccessChange}
-                onRenameTunnel={(tunnel, name) => void renameTunnel(tunnel, name)}
-                clientId={session.id}
-                onTunnelUpdated={handleTunnelUpdated}
+              <TunnelsPage {...shareControls(session.id)} onNewTunnel={() => openNewShare()} />
+            )}
+
+            {activePage === 'projects' && (
+              <ProjectsPage
+                {...shareControls(session.id)}
                 projects={projectsApi.projects}
                 projectsLoaded={projectsApi.loaded}
+                onNewShare={openNewShare}
                 onCreateProject={createProject}
                 onSaveProject={saveProject}
                 onDeleteProject={removeProject}
-                onMoveShare={(tunnel, projectId) => void moveShare(tunnel, projectId)}
                 onStartProject={project => void startProject(project)}
                 onStopProject={project => void stopProject(project)}
               />

@@ -29,10 +29,8 @@ export type NewShareRequest = {
   folder?: FolderShareConfig
   preview?: boolean
   name?: string
-  /** An existing project, or empty for none. */
+  /** The project the share is created in, if any. */
   projectId?: string
-  /** Set instead of projectId to create a project for the share. */
-  newProjectName?: string
 }
 
 export const DEFAULT_FOLDER_EXCLUDES = ['.git', 'node_modules']

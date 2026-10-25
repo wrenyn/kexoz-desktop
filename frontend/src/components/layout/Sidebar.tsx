@@ -79,7 +79,7 @@ export default function Sidebar({ activePage, onNavigate, onNewShare, session, l
           type="button"
           className={`ps-sidebar-account ${activePage === 'settings' ? 'active' : ''}`}
           aria-current={activePage === 'settings' ? 'page' : undefined}
-          title="Settings (Ctrl+6)"
+          title={`Settings (Ctrl+${NAV_ITEMS.find(item => item.id === 'settings')?.shortcut})`}
           onClick={() => onNavigate('settings')}
         >
           <span className="ps-account-avatar" aria-hidden="true">{email ? email.charAt(0) : 'G'}</span>

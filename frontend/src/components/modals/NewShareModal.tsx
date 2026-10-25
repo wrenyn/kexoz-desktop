@@ -1,11 +1,10 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { QUICK_PORTS } from '../../lib/storage'
 import { ROOT_DOMAIN, type Project, type ShareAccess, type SharePermissions, type TunnelType } from '../../lib/api'
-import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, parseExcludes, projectNameError, type FolderInfo, type NewShareRequest } from '../../lib/shares'
+import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, parseExcludes, type FolderInfo, type NewShareRequest } from '../../lib/shares'
 import { usePortScanner } from '../../hooks/usePortScanner'
 
 const MIN_PASSWORD = 4
-const NEW_PROJECT = '__new__'
 
 export type AddressOption = {
   name: string
@@ -16,9 +15,8 @@ export type AddressOption = {
 type Props = {
   onClose: () => void
   addresses: AddressOption[]
-  projects: Project[]
-  /** Project to put the share in, when opened from a project. */
-  defaultProjectId?: string
+  /** Project the share is created in, when opened from one. */
+  project?: Project
   onManageAddresses: () => void
   onSubmit: (request: NewShareRequest) => void | Promise<void>
 }
@@ -119,12 +117,10 @@ function Field({ label, htmlFor, aside, help, error, children }: {
   )
 }
 
-export default function NewShareModal({ onClose, onSubmit, addresses, projects, defaultProjectId, onManageAddresses }: Props) {
+export default function NewShareModal({ onClose, onSubmit, addresses, project, onManageAddresses }: Props) {
   const [kind, setKind] = useState<Kind | null>(null)
   const [address, setAddress] = useState((addresses.find(option => option.usedBy.length === 0) ?? addresses[0])?.name ?? '')
   const [name, setName] = useState('')
-  const [projectChoice, setProjectChoice] = useState(projects.some(project => project.id === defaultProjectId) ? defaultProjectId ?? '' : '')
-  const [newProjectName, setNewProjectName] = useState('')
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<Protocol>('web')
   const [endToEnd, setEndToEnd] = useState(false)
@@ -192,9 +188,8 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   const duration = expiry === 'custom'
     ? `${customMinutes}m`
     : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
-  const projectError = projectChoice === NEW_PROJECT ? projectNameError(newProjectName) : ''
   const hiddenError = expiryError
-  const firstError = addressError || portError || folderError || passwordError || projectError || hiddenError
+  const firstError = addressError || portError || folderError || passwordError || hiddenError
   const sharedWith = addresses.find(option => option.name === address)?.usedBy ?? []
   const detectedLabel = kind === 'port' ? detectedPorts.find(detected => detected.port === portNumber)?.label : undefined
   const show = (error: string) => (attempted ? error : '')
@@ -251,7 +246,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
     if (!kind) return
     setAttempted(true)
     if (firstError) {
-      if (hiddenError && !(addressError || portError || folderError || passwordError || projectError)) setMoreOpen(true)
+      if (hiddenError && !(addressError || portError || folderError || passwordError)) setMoreOpen(true)
       requestAnimationFrame(() => {
         modalRef.current?.querySelector('.ps-ns-error')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       })
@@ -274,8 +269,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
           excludes: parseExcludes(excludesText),
         } : undefined,
         name: name.trim() || undefined,
-        projectId: projectChoice === NEW_PROJECT ? undefined : projectChoice || undefined,
-        newProjectName: projectChoice === NEW_PROJECT ? newProjectName.trim().replace(/\s+/g, ' ') : undefined,
+        projectId: project?.id,
       })
     } finally {
       setSubmitting(false)
@@ -443,43 +437,17 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   )
 
   const organizeFields = (
-    <div className="ps-ns-row">
-      <Field label="Name" htmlFor="new-share-name">
-        <input
-          id="new-share-name"
-          className="ps-input"
-          value={name}
-          maxLength={60}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={onEnter}
-          placeholder={detectedLabel ? `Like ${detectedLabel}` : kind === 'folder' ? 'Like Design files' : 'Like Frontend'}
-        />
-      </Field>
-      <Field label="Project" htmlFor="new-share-project" error={show(projectError)}>
-        <select
-          id="new-share-project"
-          className="ps-ns-select ps-ns-select-boxed"
-          value={projectChoice}
-          onChange={e => setProjectChoice(e.target.value)}
-        >
-          <option value="">No project</option>
-          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-          <option value={NEW_PROJECT}>New project…</option>
-        </select>
-        {projectChoice === NEW_PROJECT && (
-          <input
-            className="ps-input"
-            value={newProjectName}
-            onChange={e => setNewProjectName(e.target.value)}
-            onKeyDown={onEnter}
-            placeholder="Project name"
-            aria-label="New project name"
-            aria-invalid={attempted && Boolean(projectError)}
-            autoFocus
-          />
-        )}
-      </Field>
-    </div>
+    <Field label="Name" htmlFor="new-share-name" help="Optional. Shown in your list instead of the address.">
+      <input
+        id="new-share-name"
+        className="ps-input"
+        value={name}
+        maxLength={60}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={onEnter}
+        placeholder={detectedLabel ? `Like ${detectedLabel}` : kind === 'folder' ? 'Like Design files' : 'Like Frontend'}
+      />
+    </Field>
   )
 
   return (
@@ -494,7 +462,10 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
         onKeyDown={handleKeyDown}
       >
         <div className="ps-ns-header">
-          <h2 className="ps-modal-title" id="new-share-title">{kind ? TITLES[kind] : 'What do you want to share?'}</h2>
+          <div>
+            <h2 className="ps-modal-title" id="new-share-title">{kind ? TITLES[kind] : 'What do you want to share?'}</h2>
+            {project && <p className="ps-ns-context">Adds to <strong>{project.name}</strong></p>}
+          </div>
           <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose}>Close</button>
         </div>
 
