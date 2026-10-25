@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
-import { updateTunnel, type PersistentTunnel, type PreviewNote } from '../../lib/api'
+import { createReviewLink, updateTunnel, type PersistentTunnel, type PreviewNote } from '../../lib/api'
+import { noteColors } from '../../lib/noteColors'
 import { shareUrl } from '../../lib/shares'
 import { extractError } from '../../lib/utils'
 
@@ -10,13 +11,14 @@ export function PreviewSetting({ clientId, tunnel, onUpdated }: {
   onUpdated: (tunnel: PersistentTunnel) => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [opening, setOpening] = useState(false)
   const enabled = Boolean(tunnel.preview)
 
   const toggle = async (next: boolean) => {
     setSaving(true)
     try {
       onUpdated(await updateTunnel(clientId, { ...tunnel, preview: next }))
-      toast.success(next ? 'Interactive preview is on. Visitors see an Add note button.' : 'Interactive preview is off')
+      toast.success(next ? 'Interactive preview is on. Visitors enter their name, then can pin notes.' : 'Interactive preview is off')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -24,18 +26,42 @@ export function PreviewSetting({ clientId, tunnel, onUpdated }: {
     }
   }
 
+  const openAsOwner = async () => {
+    setOpening(true)
+    try {
+      const query = await createReviewLink(clientId, tunnel.id)
+      window.open(`${shareUrl(tunnel)}/?${query}`, '_blank', 'noopener')
+    } catch (err) {
+      toast.error(extractError(err))
+    } finally {
+      setOpening(false)
+    }
+  }
+
   return (
-    <div className="ps-share-extra ps-share-extra-inline">
+    <div className="ps-share-extra">
       <label className="ps-ns-toggle-row ps-share-extra-row">
         <span className="ps-ns-toggle-text">
           <span className="ps-ns-toggle-title">Interactive preview</span>
-          <span className="ps-ns-toggle-desc">Visitors can click anywhere on a page to leave a note.</span>
+          <span className="ps-ns-toggle-desc">Visitors enter their name once, then pin notes anywhere on the page.</span>
         </span>
         <span className="ps-toggle">
           <input type="checkbox" aria-label="Interactive preview" checked={enabled} disabled={saving} onChange={event => void toggle(event.target.checked)} />
           <span className="ps-toggle-track" />
         </span>
       </label>
+      {enabled && (
+        <div className="ps-preview-owner">
+          <span className="ps-panel-hint">
+            {tunnel.active
+              ? 'Open it yourself to resolve notes on the page. You skip the password.'
+              : 'Start the share to open it as the owner.'}
+          </span>
+          <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void openAsOwner()} disabled={opening || !tunnel.active}>
+            {opening ? 'Opening…' : 'Open as owner'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -61,6 +87,7 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete }: {
   const open = notes.filter(note => note.status === 'open')
   const resolved = notes.length - open.length
   const visible = showResolved ? notes : open
+  const colors = useMemo(() => noteColors(notes), [notes])
   const pageUrl = (path: string) => `${shareUrl(tunnel)}${path.startsWith('/') ? path : `/${path}`}`
 
   return (
@@ -91,8 +118,11 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete }: {
             <li key={note.id} className={note.status === 'resolved' ? 'resolved' : ''}>
               <p className="ps-feedback-body">{note.body}</p>
               <div className="ps-feedback-meta">
-                <span>
-                  {note.author || 'Anonymous'} · {timeAgo(note.createdAt)} ·{' '}
+                <span className="ps-note-author">
+                  <span className="ps-note-dot" style={{ background: colors.get(note.id) }} aria-hidden="true" />
+                  <strong>{note.author || 'Guest'}</strong>
+                  {note.authorRole === 'owner' && <span className="ps-note-owner">Owner</span>}
+                  · {timeAgo(note.createdAt)} ·{' '}
                   <a href={pageUrl(note.path)} target="_blank" rel="noreferrer" className="ps-share-note-path">{note.path || '/'}</a>
                 </span>
                 <div className="ps-feedback-actions">

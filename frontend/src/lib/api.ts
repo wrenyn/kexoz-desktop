@@ -291,8 +291,16 @@ export type PreviewNote = {
   path: string
   body: string
   author: string
+  authorKey?: string
+  authorRole?: 'owner' | 'visitor'
   status: 'open' | 'resolved'
   createdAt: string
+}
+
+/** A one-time query string that opens the share with owner controls. */
+export const createReviewLink = async (clientId: string, tunnelId: string): Promise<string> => {
+  const { data } = await axios.post<{ query: string }>(`${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/review-link`, { clientId }, { params: { clientId } })
+  return data.query
 }
 
 export const listPreviewNotes = async (clientId: string, tunnelId?: string): Promise<PreviewNote[]> => {
