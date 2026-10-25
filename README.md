@@ -31,9 +31,7 @@ with access control, expiry and live traffic built in. Built and maintained by
 - **Interactive preview** — turn it on for a web share and visitors can pin notes anywhere on the page; read, resolve and delete them on the Feedback page.
 - **Projects** — group the shares one app needs and start them together, or run `kexoz start <name>` from the CLI.
 - **Connection dashboard** — status, 24-hour uptime, reconnects and the reason for each drop, plus one-click diagnostics (internet, DNS, Kexoz servers, local ports).
-- **Local port detection** — every app listening on this computer, Docker containers included, is offered when you share a port.
-- **Folder download limits** — a folder share can stop serving downloads after a set number.
-- **Tray and auto-start** — keep shares running in the background.
+- **Local port detection** — every app listening on this computer, Docker containers included, is offered when you share a port.- **Tray and auto-start** — keep shares running in the background.
 
 ## Tech stack
 

@@ -5,8 +5,6 @@ import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, parseExcludes, type FolderInfo
 import { usePortScanner } from '../../hooks/usePortScanner'
 
 const MIN_PASSWORD = 4
-const MAX_DOWNLOADS = 100000
-
 type Props = {
   onClose: () => void
   /** Addresses the user owns that no other share is using. */
@@ -123,7 +121,6 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
   const [folder, setFolder] = useState<FolderInfo | null>(null)
   const [folderWritable, setFolderWritable] = useState(false)
   const [excludesText, setExcludesText] = useState(DEFAULT_FOLDER_EXCLUDES.join('\n'))
-  const [downloadLimit, setDownloadLimit] = useState('')
   const [broadConfirmed, setBroadConfirmed] = useState(false)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -179,15 +176,10 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
     : customMinutes > MAX_EXPIRY_MINUTES
       ? 'Pick a time up to 365 days.'
       : ''
-  const downloadNumber = Number(downloadLimit)
-  const downloadError = kind !== 'folder' || downloadLimit.trim() === '' ? '' :
-    !Number.isInteger(downloadNumber) || downloadNumber < 1 || downloadNumber > MAX_DOWNLOADS
-      ? `Use a whole number from 1 to ${MAX_DOWNLOADS.toLocaleString()}, or leave it empty.`
-      : ''
   const duration = expiry === 'custom'
     ? `${customMinutes}m`
     : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
-  const hiddenError = expiryError || downloadError
+  const hiddenError = expiryError
   const firstError = addressError || portError || folderError || passwordError || hiddenError
   const show = (error: string) => (attempted ? error : '')
 
@@ -264,7 +256,6 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
         folder: kind === 'folder' && folder ? {
           root: folder.path,
           excludes: parseExcludes(excludesText),
-          maxDownloads: downloadLimit.trim() ? downloadNumber : undefined,
         } : undefined,
       })
     } finally {
@@ -566,24 +557,6 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                   {expiryField}
                   {kind === 'folder' && (
                     <>
-                      <Field
-                        label="Download limit"
-                        htmlFor="new-share-downloads"
-                        help="Each file or zip download counts once. Leave empty for no limit."
-                        error={show(downloadError)}
-                      >
-                        <input
-                          id="new-share-downloads"
-                          className="ps-input ps-input-mono ps-ns-short"
-                          type="number"
-                          min={1}
-                          max={MAX_DOWNLOADS}
-                          value={downloadLimit}
-                          onChange={e => setDownloadLimit(e.target.value)}
-                          placeholder="No limit"
-                          onKeyDown={onEnter}
-                        />
-                      </Field>
                       <Field
                         label="Hide from visitors"
                         htmlFor="new-share-excludes"
