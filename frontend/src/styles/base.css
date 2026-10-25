@@ -1163,6 +1163,8 @@ a.ps-btn { text-decoration: none; }
 .ps-req-search input::placeholder { color: var(--text-soft); }
 .ps-req-check, .ps-req-retention { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .ps-req-check input { accent-color: var(--accent); }
+.ps-req-retention select { max-width: 220px; }
+.ps-req-host { margin-right: 6px; color: var(--text-soft); }
 
 .ps-req-list {
   min-width: 280px;

@@ -7,9 +7,15 @@ type Props = {
   onClear: () => void
   retention: number
   onRetentionChange: (value: number) => void
-  publicUrl: string
+  /** Every web address the user owns, main address first. */
+  hosts: string[]
   tunnels: PersistentTunnel[]
 }
+
+const HOST_STORAGE_KEY = 'kexoz-requests-host'
+const ALL_HOSTS = 'all'
+
+const shortHost = (host: string) => host.endsWith(`.${ROOT_DOMAIN}`) ? host.slice(0, -ROOT_DOMAIN.length - 1) : host
 
 type Draft = { method: string; path: string; headers: string; body: string }
 type SendResult = { status: number; durationMs: number; body: string; headers: Record<string, string[]> } | { error: string }
@@ -176,7 +182,9 @@ function HeaderList({ headers, showSensitive, empty }: { headers: Record<string,
   )
 }
 
-export default function RequestsPage({ requestLog, onClear, retention, onRetentionChange, publicUrl, tunnels }: Props) {
+export default function RequestsPage({ requestLog, onClear, retention, onRetentionChange, hosts, tunnels }: Props) {
+  const [savedHost, setSavedHost] = useState(() => window.localStorage.getItem(HOST_STORAGE_KEY) ?? ALL_HOSTS)
+  const host = hosts.length > 1 && hosts.includes(savedHost) ? savedHost : ALL_HOSTS
   const [selected, setSelected] = useState<RequestLogEntry | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('headers')
   const [showFrameworkRequests, setShowFrameworkRequests] = useState(false)
@@ -281,8 +289,9 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
   // Replay goes back to the share the request arrived on, not whichever share is selected.
   const replayBase = (entry: RequestLogEntry | null) => {
-    const host = Object.entries(entry?.headers ?? {}).find(([key]) => ['x-forwarded-host', 'host'].includes(key.toLowerCase()))?.[1]
-    return host ? `https://${host}` : publicUrl
+    const entryHost = Object.entries(entry?.headers ?? {}).find(([key]) => ['x-forwarded-host', 'host'].includes(key.toLowerCase()))?.[1]
+    const fallback = host === ALL_HOSTS ? hosts[0] : host
+    return entryHost ? `https://${entryHost}` : fallback ? `https://${fallback}` : ''
   }
 
   const replayRequest = async () => {
@@ -314,8 +323,12 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     }
   }
 
-  const methods = useMemo(() => [...new Set(requestLog.map(entry => entry.method))].sort(), [requestLog])
-  const displayLog = requestLog.filter(entry => {
+  const hostLog = useMemo(
+    () => host === ALL_HOSTS ? requestLog : requestLog.filter(entry => requestHost(entry) === host),
+    [requestLog, host],
+  )
+  const methods = useMemo(() => [...new Set(hostLog.map(entry => entry.method))].sort(), [hostLog])
+  const displayLog = hostLog.filter(entry => {
     if (!showFrameworkRequests && isNoiseRequestPath(entry.path)) return false
     if (methodFilter !== 'all' && entry.method !== methodFilter) return false
     if (statusFilter !== 'all' && !String(entry.status ?? '').startsWith(statusFilter)) return false
@@ -334,14 +347,24 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     window.setTimeout(() => setCopied(false), 1500)
   }
 
+  const emptyLink = host === ALL_HOSTS ? hosts[0] : host
   const copyLink = async () => {
-    if (!publicUrl) return
-    await navigator.clipboard.writeText(publicUrl).catch(() => {})
+    if (!emptyLink) return
+    await navigator.clipboard.writeText(`https://${emptyLink}`).catch(() => {})
     setLinkCopied(true)
     window.setTimeout(() => setLinkCopied(false), 1500)
   }
 
-  const hasRequests = requestLog.length > 0
+  const changeHost = (next: string) => {
+    setSavedHost(next)
+    window.localStorage.setItem(HOST_STORAGE_KEY, next)
+    setSelected(null)
+    setDraft(null)
+    setMethodFilter('all')
+  }
+
+  const hasRequests = hostLog.length > 0
+  const showHostInRows = host === ALL_HOSTS && hosts.length > 1
 
   return (
     <div className="ps-main ps-requests-main">
@@ -350,11 +373,20 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
           <h1 className="ps-page-title">Requests</h1>
           <p className="ps-page-subtitle">
             {hasRequests
-              ? `${displayLog.length} of ${requestLog.length} shown`
-              : 'Live traffic coming through your link'}
+              ? `${displayLog.length} of ${hostLog.length} shown`
+              : hosts.length > 1 ? 'Live traffic coming through your links' : 'Live traffic coming through your link'}
           </p>
         </div>
         <div className="ps-header-actions">
+          {hosts.length > 1 && (
+            <label className="ps-req-retention">
+              Link
+              <select value={host} onChange={event => changeHost(event.target.value)}>
+                <option value={ALL_HOSTS}>All links</option>
+                {hosts.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          )}
           <label className="ps-req-retention">
             Keep last
             <select value={retention} onChange={event => onRetentionChange(Number(event.target.value))}>
@@ -374,7 +406,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
               </div>
             )}
           </div>
-          <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onClear} disabled={!hasRequests}>
+          <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onClear} disabled={requestLog.length === 0}>
             Clear
           </button>
         </div>
@@ -383,11 +415,11 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
       <div className="ps-requests-body animate-fade-up">
         {!hasRequests ? (
           <div className="ps-card ps-req-empty-card">
-            <span className="ps-empty-title">No requests yet</span>
+            <span className="ps-empty-title">{host === ALL_HOSTS ? 'No requests yet' : 'No requests on this link yet'}</span>
             <span className="ps-empty-sub">Open your link in a browser and each request will show up here.</span>
-            {publicUrl && (
+            {emptyLink && (
               <div className="ps-req-empty-link">
-                <span className="ps-req-empty-url">{publicUrl}</span>
+                <span className="ps-req-empty-url">https://{emptyLink}</span>
                 <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void copyLink()}>
                   {linkCopied ? 'Copied' : 'Copy link'}
                 </button>
@@ -437,7 +469,10 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                       style={{ animationDelay: `${Math.min(i * 20, 200)}ms` }}
                     >
                       <span className={methodClass(entry.method)}>{entry.method}</span>
-                      <span className="ps-req-path">{entry.path}</span>
+                      <span className="ps-req-path">
+                        {showHostInRows && requestHost(entry) && <span className="ps-req-host">{shortHost(requestHost(entry))}</span>}
+                        {entry.path}
+                      </span>
                       <div className="ps-req-meta">
                         <span className={`ps-req-status ${statusClass(entry.status)}`}>{entry.status ?? 'error'}</span>
                         <span className="ps-req-time">{formatTime(entry.timestamp)}</span>

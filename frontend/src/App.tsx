@@ -16,7 +16,7 @@ import {
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain
 } from './lib/api'
-import { shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
+import { isGatedType, shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
 import { useFolderShares } from './hooks/useFolderShares'
 import { useConnectionHistory } from './hooks/useConnectionHistory'
 import { clearClientId, getClientId, setClientId } from './lib/storage'
@@ -234,10 +234,11 @@ export default function App() {
     if (tunnel.tunnelType === 'folder') void window.kexoz?.stopFolderServer?.(tunnel.id)
   }, [closeConnection])
 
-  const publicUrl = useMemo(() => {
-    if (!session?.subdomain) return ''
-    return `https://${session.subdomain}.${ROOT_DOMAIN}`
-  }, [session])
+  const requestHosts = useMemo(() => {
+    const names = [session?.subdomain, ...(session?.domains ?? [])].filter(Boolean).map(name => `${name}.${ROOT_DOMAIN}`)
+    const custom = [session?.customDomain, ...persistentTunnels.filter(t => isGatedType(t.tunnelType)).map(t => t.customDomain)]
+    return [...new Set([...names, ...custom].filter((host): host is string => Boolean(host)).map(host => host.toLowerCase()))]
+  }, [session, persistentTunnels])
 
   const persistentTunnelsRef = useRef(persistentTunnels)
   persistentTunnelsRef.current = persistentTunnels
@@ -881,7 +882,7 @@ export default function App() {
                 onClear={clearLog}
                 retention={retention}
                 onRetentionChange={setRetention}
-                publicUrl={publicUrl}
+                hosts={requestHosts}
                 tunnels={persistentTunnels}
               />
             )}
