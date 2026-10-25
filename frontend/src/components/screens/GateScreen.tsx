@@ -42,7 +42,7 @@ export default function GateScreen({ onLogin, onSkip, verifying, theme }: GateSc
           <button type="button" className="ps-gate-google" onClick={onLogin} disabled={verifying}>
             {verifying ? <><span className="ps-gate-spinner" aria-hidden="true" /> Waiting for Google…</> : <><GoogleMark /> Continue with Google</>}
           </button>
-          <p className="ps-gate-note">The full free plan: 5 shares, guest links and preview notes.</p>
+          <p className="ps-gate-note">The full free plan: 5 shares, password protection and preview notes.</p>
 
           <button type="button" className="ps-btn ps-btn-ghost ps-gate-guest" onClick={onSkip}>
             {verifying ? 'Cancel and continue as guest' : 'Continue as guest'}

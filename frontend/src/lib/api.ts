@@ -273,36 +273,6 @@ export const deleteTunnel = async (clientId: string, tunnelId: string): Promise<
   await axios.delete(`${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}`, { params: { clientId } })
 }
 
-export type AccessLink = {
-  id: string
-  token: string
-  label: string
-  expiresAt?: string | null
-  maxUses: number
-  uses: number
-  createdAt: string
-  lastUsedAt?: string | null
-}
-
-export type NewAccessLink = { label: string; expiresIn?: string; maxUses?: number }
-
-const linksPath = (tunnelId: string) => `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/links`
-
-export const listAccessLinks = async (clientId: string, tunnelId: string): Promise<AccessLink[]> => {
-  const { data } = await axios.get<{ links: AccessLink[] | null }>(linksPath(tunnelId), { params: { clientId } })
-  return data.links ?? []
-}
-
-export const createAccessLink = async (clientId: string, tunnelId: string, input: NewAccessLink): Promise<{ link: AccessLink; links: AccessLink[] }> => {
-  const { data } = await axios.post<{ link: AccessLink; links: AccessLink[] | null }>(linksPath(tunnelId), { clientId, ...input }, { params: { clientId } })
-  return { link: data.link, links: data.links ?? [data.link] }
-}
-
-export const revokeAccessLink = async (clientId: string, tunnelId: string, linkId: string): Promise<AccessLink[]> => {
-  const { data } = await axios.delete<{ links: AccessLink[] | null }>(`${linksPath(tunnelId)}/${encodeURIComponent(linkId)}`, { params: { clientId } })
-  return data.links ?? []
-}
-
 export type PreviewNote = {
   id: string
   tunnelId: string

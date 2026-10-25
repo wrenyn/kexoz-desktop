@@ -20,7 +20,6 @@ with access control, expiry and live traffic built in. Built and maintained by
 ## Control who gets in
 
 - **Private or public** — private shares ask visitors for the password you set; public warnings are explicit.
-- **Guest links** — let someone into a private share without the password, for a set time or number of visits, with a QR code; revoke any time.
 - **Permissions** — read-only shares accept only safe requests; read-only terminals are view-only.
 - **Pause, resume and expiry** — stop traffic instantly, set an expiry or make a link one-time.
 - **Custom domains** — use your own domain instead of a `kexoz.dev` subdomain (Pro).

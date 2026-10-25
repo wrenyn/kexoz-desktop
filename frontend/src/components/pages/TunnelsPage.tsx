@@ -3,7 +3,7 @@ import type { PersistentTunnel, ShareAccess } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, isGatedType, shareAccess, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
-import { GuestLinks, PreviewSetting, ShareFeedback } from '../dashboard/ShareExtras'
+import { PreviewSetting, ShareFeedback } from '../dashboard/ShareExtras'
 import { usePreviewNotes } from '../../hooks/usePreviewNotes'
 
 type Props = {
@@ -245,10 +245,6 @@ function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => vo
             <Section title="Who can open it" hint={type === 'e2e'
               ? 'Anyone with the link. Traffic is encrypted all the way to your computer.'
               : 'Anyone who has the address and port can connect.'} />
-          )}
-
-          {isGatedType(type) && access === 'private' && tunnel.password && (
-            <GuestLinks key={`links-${tunnel.id}`} clientId={clientId} tunnel={tunnel} />
           )}
 
           {type === 'http' && (
