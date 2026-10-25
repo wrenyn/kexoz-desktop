@@ -1494,6 +1494,9 @@ a.ps-btn { text-decoration: none; }
   background-position: right 10px center;
 }
 .ps-ns-select option { background: var(--bg-surface); color: var(--text); }
+.ps-ns-custom-expiry { width: 240px; }
+.ps-ns-custom-expiry .ps-input { flex: 1; min-width: 0; }
+.ps-ns-unit { flex: 0 0 auto; font-family: var(--sans-font); border-left: 1px solid var(--border); }
 .ps-ns-notice {
   display: flex;
   align-items: center;

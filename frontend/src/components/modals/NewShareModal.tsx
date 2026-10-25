@@ -16,7 +16,22 @@ type Props = {
 
 type Kind = 'port' | 'terminal' | 'folder'
 type Protocol = 'web' | 'tcp' | 'udp'
-type ExpiryId = typeof EXPIRY_OPTIONS[number]['id']
+type ExpiryId = typeof EXPIRY_OPTIONS[number]['id'] | 'custom'
+type ExpiryUnit = 'm' | 'h' | 'd'
+
+const EXPIRY_CHOICES: { id: ExpiryId; label: string }[] = [
+  ...EXPIRY_OPTIONS.filter(option => option.id !== 'never').map(option => ({ id: option.id, label: option.label })),
+  { id: 'custom', label: 'Custom' },
+  { id: 'never', label: 'Never' },
+]
+
+const EXPIRY_UNITS: { id: ExpiryUnit; label: string; minutes: number }[] = [
+  { id: 'm', label: 'Minutes', minutes: 1 },
+  { id: 'h', label: 'Hours', minutes: 60 },
+  { id: 'd', label: 'Days', minutes: 60 * 24 },
+]
+
+const MAX_EXPIRY_MINUTES = 365 * 24 * 60
 
 const KINDS: { id: Kind; label: string }[] = [
   { id: 'port', label: 'Port' },
@@ -115,6 +130,8 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
   const [broadConfirmed, setBroadConfirmed] = useState(false)
   const [password, setPassword] = useState('')
   const [expiry, setExpiry] = useState<ExpiryId>('never')
+  const [customAmount, setCustomAmount] = useState('30')
+  const [customUnit, setCustomUnit] = useState<ExpiryUnit>('m')
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [pickError, setPickError] = useState('')
@@ -155,7 +172,17 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
     : [...password].length < MIN_PASSWORD
       ? `Use at least ${MIN_PASSWORD} characters.`
       : ''
-  const firstError = addressError || portError || folderError || passwordError
+  const customNumber = Number(customAmount)
+  const customMinutes = customNumber * (EXPIRY_UNITS.find(unit => unit.id === customUnit)?.minutes ?? 1)
+  const expiryError = expiry !== 'custom' ? '' : !Number.isInteger(customNumber) || customNumber < 1
+    ? 'Enter a whole number, like 30 or 2.'
+    : customMinutes > MAX_EXPIRY_MINUTES
+      ? 'Pick a time up to 365 days.'
+      : ''
+  const duration = expiry === 'custom'
+    ? `${customMinutes}m`
+    : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
+  const firstError = addressError || portError || folderError || passwordError || expiryError
   const show = (error: string) => (attempted ? error : '')
 
   const switchKind = (next: Kind) => {
@@ -224,7 +251,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
         access,
         permissions,
         password: needsPassword ? password : undefined,
-        duration: EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined,
+        duration,
         folder: kind === 'folder' && folder ? { root: folder.path, excludes: parseExcludes(excludesText) } : undefined,
       })
     } finally {
@@ -234,7 +261,6 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
 
   const accessHint =
     tunnelType === 'pty' ? 'Terminals are always private. Only people with the password can open it.' :
-    !gated ? 'Kexoz can’t check visitors on this kind of connection, so anyone with the address can connect. Protect the service itself.' :
     access === 'public' ? 'Anyone with the link can open it.' :
     'Only people with the password can open it.'
 
@@ -443,16 +469,18 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
             </>
           )}
 
-          <Field label="Who can open it" help={accessHint}>
-            {gated && tunnelType !== 'pty' && (
-              <Segmented
-                label="Access"
-                options={[{ id: 'private', label: 'Private' }, { id: 'public', label: 'Public' }]}
-                value={access}
-                onChange={setChosenAccess}
-              />
-            )}
-          </Field>
+          {gated && (
+            <Field label="Who can open it" help={accessHint}>
+              {tunnelType !== 'pty' && (
+                <Segmented
+                  label="Access"
+                  options={[{ id: 'private', label: 'Private' }, { id: 'public', label: 'Public' }]}
+                  value={access}
+                  onChange={setChosenAccess}
+                />
+              )}
+            </Field>
+          )}
 
           {needsPassword && (
             <Field
@@ -474,13 +502,33 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
             </Field>
           )}
 
-          <Field label="Stop sharing after">
-            <Segmented
-              label="Expiry"
-              options={EXPIRY_OPTIONS.map(option => ({ id: option.id, label: option.label }))}
-              value={expiry}
-              onChange={setExpiry}
-            />
+          <Field label="Stop sharing after" error={show(expiryError)}>
+            <Segmented label="Expiry" options={EXPIRY_CHOICES} value={expiry} onChange={setExpiry} />
+            {expiry === 'custom' && (
+              <div className="ps-input-group ps-ns-custom-expiry">
+                <input
+                  className="ps-input ps-input-mono"
+                  type="number"
+                  min={1}
+                  value={customAmount}
+                  onChange={e => setCustomAmount(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void handleSubmit() }}
+                  aria-label="Stop sharing after"
+                  aria-invalid={attempted && Boolean(expiryError)}
+                  autoFocus
+                />
+                <select
+                  className="ps-ns-select ps-ns-unit"
+                  value={customUnit}
+                  onChange={e => setCustomUnit(e.target.value as ExpiryUnit)}
+                  aria-label="Unit"
+                >
+                  {EXPIRY_UNITS.map(unit => (
+                    <option key={unit.id} value={unit.id}>{unit.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </Field>
 
         </div>
