@@ -1414,7 +1414,8 @@ a.ps-btn { text-decoration: none; }
 .ps-panel-hint { margin: -4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-soft); }
 .ps-panel-section .ps-panel-hint:last-child { margin-bottom: 0; }
 .ps-panel-access { display: flex; flex-direction: column; gap: 10px; }
-.ps-panel-segmented { align-self: flex-start; }
+.ps-panel-segmented { align-self: stretch; }
+.ps-panel-segmented .ps-segmented-item { flex: 1 1 0; }
 .ps-panel-password { display: flex; align-items: center; gap: 8px; }
 .ps-panel-password .ps-input { flex: 1; }
 .ps-panel-save { display: flex; gap: 8px; }
