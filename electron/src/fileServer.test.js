@@ -143,6 +143,8 @@ test('downloads a folder as a valid zip without hidden files', async () => {
 
 test('lists entries with their type for search and filters', async () => {
   const html = (await request(readOnly.port, 'GET', '/')).body.toString();
+  assert.match(html, /<a href="\/">share<\/a>/, 'the shared folder is named, not "root"');
+  assert.match(html, /<title>share - Kexoz<\/title>/);
   assert.match(html, /id="search"/);
   assert.match(html, /data-name="hello\.txt" data-kind="document" data-size="11"/);
   assert.match(html, /data-name="docs" data-kind="folder"/);

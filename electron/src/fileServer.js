@@ -224,8 +224,9 @@ function createFolderServer({ root, readOnly = true, excludes = DEFAULT_EXCLUDES
     const entries = await visibleEntries(target.real);
     const nonce = crypto.randomBytes(16).toString('base64');
     const base = target.relative ? `/${encodePath(target.relative)}/` : '/';
-    const folderName = target.segments[target.segments.length - 1] || 'Shared folder';
-    const crumbs = ['<a href="/">root</a>'];
+    const rootName = path.basename(rootReal) || 'Shared folder';
+    const folderName = target.segments[target.segments.length - 1] || rootName;
+    const crumbs = [`<a href="/">${escapeHtml(rootName)}</a>`];
     target.segments.forEach((segment, index) => {
       crumbs.push(`<a href="/${encodePath(target.segments.slice(0, index + 1).join('/'))}/">${escapeHtml(segment)}</a>`);
     });
