@@ -343,26 +343,14 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                 />
               </Field>
 
-              {(protocol !== 'udp' || tunnelType === 'http') && (
+              {protocol === 'tcp' && (
                 <div className="ps-ns-toggles">
-                  {protocol !== 'udp' && (
-                    <ToggleRow
-                      title="End-to-end encryption"
-                      desc={protocol === 'web'
-                        ? 'Traffic stays encrypted until it reaches this computer. Requests won’t show on the Requests page.'
-                        : 'Encrypted traffic passes through to your service untouched.'}
-                      checked={endToEnd}
-                      onChange={checked => { setEndToEnd(checked); if (checked) setReadOnly(false) }}
-                    />
-                  )}
-                  {tunnelType === 'http' && (
-                    <ToggleRow
-                      title="Read-only"
-                      desc="Visitors can look around but can’t submit forms, upload files or open WebSockets."
-                      checked={readOnly}
-                      onChange={setReadOnly}
-                    />
-                  )}
+                  <ToggleRow
+                    title="End-to-end encryption"
+                    desc="Encrypted traffic passes through to your service untouched."
+                    checked={endToEnd}
+                    onChange={setEndToEnd}
+                  />
                 </div>
               )}
             </>
