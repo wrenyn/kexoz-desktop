@@ -56,7 +56,7 @@ async function connect(clientId, tunnelId, tunnelType, port) {
   const tunnel = connectTunnel({
     tunnelUrl: `${AGENT_URL}/tunnel/connect?clientId=${clientId}&tunnelId=${tunnelId}&proto=3`,
     tunnelType,
-    getPort: () => port,
+    port,
     onLogEntry: () => {},
     onStateChange: s => { state = s; },
   });
@@ -122,7 +122,7 @@ async function main() {
   check('resumed share serves visitors again', r.status === 200, `${r.status}`);
 
   const priv = await api('PUT', `/client/tunnels/${web.id}`, { clientId, ...p.data, access: 'private' }, `?clientId=${clientId}`);
-  check('guest cannot make a share private without a password (403)', priv.status === 403, `${priv.status} ${JSON.stringify(priv.data)}`);
+  check('a share cannot be made private without a password', priv.status === 400, `${priv.status} ${JSON.stringify(priv.data)}`);
   const withPw = await api('PUT', `/client/tunnels/${web.id}`, { clientId, ...p.data, password: 's3cret-pass', access: 'private' }, `?clientId=${clientId}`);
   check('password makes the share private', withPw.status === 200 && withPw.data.access === 'private', `${withPw.status} ${JSON.stringify(withPw.data)}`);
   r = await request({ host: webHost });
@@ -154,9 +154,13 @@ async function main() {
 
 async function folderSection(clientId) {
   let r, p;
-  const v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-def-${rand()}`, port: 3000, pathRoutes: [{ path: '/', port: 3000 }], tunnelType: 'http', password: 'pw' });
+  const v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-def-${rand()}`, port: 3000, pathRoutes: [{ path: '/', port: 3000 }], tunnelType: 'http', password: 'pass1' });
   check('share with a password and no access defaults to private', v.status < 300 && v.data.access === 'private', `${v.status} ${JSON.stringify(v.data)}`);
   if (v.data?.id) await api('DELETE', `/client/tunnels/${v.data.id}`, null, `?clientId=${clientId}`);
+  // A deleted share keeps its address, and the free plan has one.
+  authId = '';
+  clientId = (await api('POST', '/client/identity', {})).data.id;
+  authId = clientId;
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kexoz-folder-'));
   fs.writeFileSync(path.join(dir, 'readme.txt'), 'hello from the shared folder');
@@ -206,6 +210,32 @@ async function folderSection(clientId) {
   r = await request({ method: 'PUT', host: folderHost, pathName: '/upload.txt', body: 'nope' });
   check('read-only folder: upload blocked at the gateway (405)', r.status === 405, `${r.status}`);
   check('nothing written to disk', !fs.existsSync(path.join(dir, 'upload.txt')));
+  r = await request({ method: 'POST', host: folderHost, pathName: '/', headers: { Accept: 'text/html' }, body: 'x=1' });
+  check('read-only folder: browsers get a page, not JSON', r.status === 405 && r.body.toString().includes('view only'), `${r.status} ${r.body.toString().slice(0, 80)}`);
+
+  const fp = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, access: 'private', password: 'folder-pass' }, `?clientId=${clientId}`);
+  folderShare = fp.data;
+  check('make folder share private', fp.status === 200 && folderShare.access === 'private', `${fp.status} ${JSON.stringify(fp.data)}`);
+  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html' } });
+  check('private folder: visitors see the password page', r.status === 401 && r.body.toString().includes('kexoz_share_password'), `${r.status}`);
+  const unlockForm = password => ({ method: 'POST', host: folderHost, pathName: '/docs/', body: `kexoz_share_password=${password}`, headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' } });
+  r = await request(unlockForm('wrong'));
+  check('private folder: wrong password is refused', r.status === 401, `${r.status}`);
+  r = await request(unlockForm('folder-pass'));
+  const cookie = String(r.headers['set-cookie'] || '').split(';')[0];
+  check('private folder: right password goes back to the page', r.status === 303 && r.headers.location === '/docs/' && cookie.startsWith('ps_share='), `${r.status} ${r.headers.location}`);
+  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html', Cookie: cookie } });
+  check('private folder: listing opens after unlocking', r.status === 200 && r.body.toString().includes('guide.md'), `${r.status}`);
+  r = await request({ ...unlockForm('folder-pass'), headers: { ...unlockForm('').headers, Cookie: cookie } });
+  check('private folder: password form sent again (back button) returns to the folder', r.status === 303 && r.headers.location === '/docs/', `${r.status} ${r.body.toString().slice(0, 80)}`);
+
+  const fpub = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, access: 'public' }, `?clientId=${clientId}`);
+  folderShare = fpub.data;
+  check('make folder share public again', fpub.status === 200 && folderShare.access === 'public', `${fpub.status}`);
+  r = await request(unlockForm('folder-pass'));
+  check('public folder: a password page left open still lands on the folder', r.status === 303 && r.headers.location === '/docs/', `${r.status} ${r.body.toString().slice(0, 80)}`);
+  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html' } });
+  check('public folder: listing opens without a password', r.status === 200 && r.body.toString().includes('guide.md'), `${r.status}`);
 
   const fw = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, permissions: 'read-write' }, `?clientId=${clientId}`);
   folderShare = fw.data;

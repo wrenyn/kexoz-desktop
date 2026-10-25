@@ -223,7 +223,6 @@ export default function App() {
       readOnly: tunnel.permissions !== 'read-write',
       excludes: config.excludes,
       hosts: [`${tunnel.subdomain}.${ROOT_DOMAIN}`, tunnel.customDomain].filter(Boolean),
-      maxDownloads: config.maxDownloads,
     })
     openTunnelConnection(clientId, tunnel.id, port, [{ path: '/', port }], tunnel.tunnelType)
   }, [openTunnelConnection])
@@ -549,6 +548,8 @@ export default function App() {
         if (selected) {
           const updated = await updateTunnel(session.id, { ...selected, customDomain })
           setPersistentTunnels(current => current.map(tunnel => tunnel.id === updated.id ? updated : tunnel))
+          // The folder server only answers the hosts it was started with.
+          if (updated.tunnelType === 'folder' && tunnelConnections.current.has(updated.id)) await connectShare(session.id, updated)
         }
       }
       toast.success('Custom domain added. Now add the DNS record.')

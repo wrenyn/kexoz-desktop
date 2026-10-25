@@ -270,7 +270,6 @@ function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => vo
               <div className="ps-panel-target">{shareTarget(tunnel, folder)}</div>
               <p className="ps-panel-hint">
                 {tunnel.permissions === 'read-write' ? 'Visitors can download and upload.' : 'Visitors can only download.'}
-                {folder?.maxDownloads ? ` Up to ${folder.maxDownloads} ${folder.maxDownloads === 1 ? 'download' : 'downloads'}.` : ''}
               </p>
             </Section>
           ) : type === 'pty' ? (
