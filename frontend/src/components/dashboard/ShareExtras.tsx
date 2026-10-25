@@ -154,7 +154,7 @@ export function GuestLinks({ clientId, tunnel }: { clientId: string; tunnel: Per
       <div className="ps-share-extra-head">
         <div>
           <span className="ps-label">Guest links</span>
-          <p className="ps-settings-row-desc">Let someone in without the password. Links stop working when they expire, run out of visits or you turn them off.</p>
+          <p className="ps-settings-row-desc">Let someone in without the password, for a set time or number of visits.</p>
         </div>
         {!creating && <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => setCreating(true)}>New guest link</button>}
       </div>

@@ -28,6 +28,13 @@ export const fromBase64 = (v: string): Uint8Array => {
   return Uint8Array.from(bin, c => c.charCodeAt(0))
 }
 
+export const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
 export const formatTime = (iso: string) => {
   const d = new Date(iso)
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`

@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import type { ClientSession, PersistentTunnel, RequestLogEntry, UsagePoint } from '../../lib/api'
-import { tierOf, upgradeUrl } from '../../lib/api'
+import { TIER_LABELS, tierOf, upgradeUrl } from '../../lib/api'
 import { shareStatus } from '../../lib/shares'
 import { isNoiseRequestPath } from '../../lib/tunnel'
+import { formatBytes } from '../../lib/utils'
 import type { ConnectionEvent } from '../../hooks/useConnectionHistory'
 import ConnectionPanel from '../dashboard/ConnectionPanel'
 
@@ -21,23 +22,12 @@ type Props = {
   onViewShares: () => void
 }
 
-const TIER_LABEL: Record<string, string> = {
-  anonymous: 'Guest', verified: 'Free', pro: 'Pro', pro_plus: 'Pro+',
-}
-
 const STATUS_GROUPS = [
   { key: '2', label: 'Success (2xx)', color: 'var(--green)' },
   { key: '3', label: 'Redirect (3xx)', color: 'var(--blue)' },
   { key: '4', label: 'Client error (4xx)', color: 'var(--yellow)' },
   { key: '5', label: 'Server error (5xx)', color: 'var(--red)' },
 ] as const
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
 
 function shortDate(period: string): string {
   const date = new Date(period)
@@ -84,13 +74,6 @@ export default function DashboardPage({
           <h1 className="ps-page-title">Dashboard</h1>
           <p className="ps-page-subtitle">Traffic and usage across all your shares</p>
         </div>
-        {tunnels.length > 0 && (
-          <div className="ps-header-actions">
-            <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>
-              New share
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="ps-page-content">
@@ -143,7 +126,7 @@ export default function DashboardPage({
                 {formatBytes(session.bandwidthUsed)} of {formatBytes(session.bandwidthLimit)} used
               </div>
             </div>
-            <span className="ps-badge ps-badge-gray">{TIER_LABEL[tier]}</span>
+            <span className="ps-badge ps-badge-gray">{TIER_LABELS[tier]}</span>
           </div>
           <div className="ps-bandwidth-bar">
             <div className="ps-bandwidth-fill" style={{ width: `${bwPct}%`, background: bwPct >= 80 ? 'var(--yellow)' : undefined }} />

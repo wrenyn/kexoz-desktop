@@ -2,12 +2,13 @@ export type Page = 'dashboard' | 'tunnels' | 'projects' | 'requests' | 'feedback
 
 // Sidebar navigation order; App maps Ctrl/Cmd+number onto it. Kept out of the
 // component file so hot reload keeps working for the sidebar itself.
-export const NAV_ITEMS: { id: Page; label: string; shortcut: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', shortcut: '1' },
-  { id: 'tunnels',   label: 'Shares',    shortcut: '2' },
-  { id: 'projects',  label: 'Projects',  shortcut: '3' },
-  { id: 'requests',  label: 'Requests',  shortcut: '4' },
-  { id: 'feedback',  label: 'Feedback',  shortcut: '5' },
-  { id: 'domains',   label: 'Domains',   shortcut: '6' },
-  { id: 'settings',  label: 'Settings',  shortcut: '7' },
+// Group 1 is everyday work, group 2 is setup; Settings lives in the sidebar footer.
+export const NAV_ITEMS: { id: Page; label: string; shortcut: string; group: 1 | 2 | 0 }[] = [
+  { id: 'dashboard', label: 'Dashboard', shortcut: '1', group: 1 },
+  { id: 'tunnels',   label: 'Shares',    shortcut: '2', group: 1 },
+  { id: 'requests',  label: 'Requests',  shortcut: '3', group: 1 },
+  { id: 'projects',  label: 'Projects',  shortcut: '4', group: 2 },
+  { id: 'feedback',  label: 'Feedback',  shortcut: '5', group: 2 },
+  { id: 'domains',   label: 'Domains',   shortcut: '6', group: 2 },
+  { id: 'settings',  label: 'Settings',  shortcut: '7', group: 0 },
 ]

@@ -145,6 +145,10 @@ export const tierOf = (session: Pick<ClientSession, 'plan' | 'ownerEmail'>): Tie
   return 'anonymous'
 }
 
+export const TIER_LABELS: Record<Tier, string> = {
+  anonymous: 'Guest', verified: 'Free', pro: 'Pro', pro_plus: 'Pro+',
+}
+
 export type LinkStatus = {
   linked: boolean
   email: string

@@ -16,7 +16,7 @@ import {
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain
 } from './lib/api'
-import { isGatedType, shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
+import { isGatedType, shareStatus, shareUrl, type FolderShareConfig, type NewShareRequest } from './lib/shares'
 import { useFolderShares } from './hooks/useFolderShares'
 import { useConnectionHistory } from './hooks/useConnectionHistory'
 import { clearClientId, getClientId, setClientId } from './lib/storage'
@@ -777,8 +777,10 @@ export default function App() {
           <Sidebar
             activePage={activePage}
             onNavigate={setActivePage}
+            onNewShare={() => setShowNewTunnel(true)}
+            session={session}
+            liveShares={persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length}
             requestCount={totalRequests}
-            ownerEmail={session.ownerEmail}
             onLogin={() => void startGoogleVerify()}
             verifying={verifying}
           />
