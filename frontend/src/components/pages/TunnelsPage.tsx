@@ -3,7 +3,8 @@ import type { PersistentTunnel, ShareAccess } from '../../lib/api'
 import { ROOT_DOMAIN } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, isGatedType, shareAccess, shareStatus, shareUrl, type FolderShareConfig } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
-import { GuestLinks, PreviewSetting } from '../dashboard/ShareExtras'
+import { GuestLinks, PreviewSetting, ShareFeedback } from '../dashboard/ShareExtras'
+import { usePreviewNotes } from '../../hooks/usePreviewNotes'
 
 type Props = {
   portInput: string
@@ -28,8 +29,9 @@ type Props = {
   onAccessChange: (tunnel: PersistentTunnel, access: ShareAccess, password?: string) => Promise<boolean>
   clientId: string
   onTunnelUpdated: (tunnel: PersistentTunnel) => void
-  onViewFeedback: () => void
 }
+
+type Notes = ReturnType<typeof usePreviewNotes>
 
 const MIN_PASSWORD = 4
 
@@ -166,12 +168,13 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   )
 }
 
-function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => void }) {
+function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => void; feedback: Notes }) {
   const {
     tunnel, onClose, isBusy, clientId, folderShares, tunnelNames, onRenameTunnel,
     portInput, setPortInput, onPortSubmit, portListening, routeRules, onRouteRulesChange, routePortStatus,
-    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, onViewFeedback,
+    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, feedback,
   } = props
+  const shareNotes = feedback.notes.filter(note => note.tunnelId === tunnel.id)
   const [showRoutes, setShowRoutes] = useState(tunnel.pathRoutes.some(route => route.path !== '/'))
   const { copied, copy } = useCopy()
   const type = tunnel.tunnelType ?? 'http'
@@ -249,7 +252,17 @@ function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => vo
           )}
 
           {type === 'http' && (
-            <PreviewSetting clientId={clientId} tunnel={tunnel} onUpdated={onTunnelUpdated} onViewFeedback={onViewFeedback} />
+            <PreviewSetting clientId={clientId} tunnel={tunnel} onUpdated={onTunnelUpdated} />
+          )}
+
+          {(tunnel.preview || shareNotes.length > 0) && (
+            <ShareFeedback
+              tunnel={tunnel}
+              notes={shareNotes}
+              busyId={feedback.busyId}
+              onStatus={(note, status) => void feedback.setStatus(note, status)}
+              onDelete={note => void feedback.remove(note)}
+            />
           )}
 
           {type === 'folder' ? (
@@ -318,8 +331,9 @@ function SharePanel(props: Props & { tunnel: PersistentTunnel; onClose: () => vo
 export default function TunnelsPage(props: Props) {
   const {
     persistentTunnels, selectedTunnelId, onSelectTunnel, onStartTunnel, onStopTunnel, onPauseTunnel,
-    folderShares, isBusy, onNewTunnel, tunnelNames,
+    folderShares, isBusy, onNewTunnel, tunnelNames, clientId,
   } = props
+  const feedback = usePreviewNotes(clientId)
   const [openId, setOpenId] = useState<string | null>(null)
   const { copied, copy } = useCopy()
   const openTunnel = openId ? persistentTunnels.find(tunnel => tunnel.id === openId) : undefined
@@ -364,6 +378,7 @@ export default function TunnelsPage(props: Props) {
                 shareTarget(tunnel, folderShares[tunnel.id]),
                 isGatedType(type) ? (shareAccess(tunnel) === 'private' ? 'Password' : 'Public') : null,
               ].filter(Boolean).join(' · ')
+              const openNotes = feedback.notes.filter(note => note.tunnelId === tunnel.id && note.status === 'open').length
               return (
                 <li key={tunnel.id} className={`ps-share-row ${openId === tunnel.id ? 'open' : ''}`}>
                   <button
@@ -377,6 +392,7 @@ export default function TunnelsPage(props: Props) {
                       <span className="ps-share-row-name">
                         {name || address}
                         <span className={`ps-share-row-status ${status}`}>{STATUS_BADGES[status].label}</span>
+                        {openNotes > 0 && <span className="ps-share-row-notes">{openNotes} new {openNotes === 1 ? 'note' : 'notes'}</span>}
                       </span>
                       <span className="ps-share-row-sub">{details}</span>
                     </span>
@@ -405,7 +421,7 @@ export default function TunnelsPage(props: Props) {
         )}
       </div>
 
-      {openTunnel && <SharePanel {...props} tunnel={openTunnel} onClose={() => setOpenId(null)} />}
+      {openTunnel && <SharePanel {...props} tunnel={openTunnel} feedback={feedback} onClose={() => setOpenId(null)} />}
     </div>
   )
 }

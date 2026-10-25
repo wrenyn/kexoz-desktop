@@ -38,7 +38,6 @@ import TunnelsPage from './components/pages/TunnelsPage'
 import RequestsPage from './components/pages/RequestsPage'
 import DomainsPage from './components/pages/DomainsPage'
 import SettingsPage from './components/pages/SettingsPage'
-import FeedbackPage from './components/pages/FeedbackPage'
 import ProjectsPage from './components/pages/ProjectsPage'
 import NewShareModal from './components/modals/NewShareModal'
 
@@ -842,15 +841,6 @@ export default function App() {
               />
             )}
 
-            {activePage === 'feedback' && (
-              <FeedbackPage
-                clientId={session.id}
-                tunnels={persistentTunnels}
-                tunnelNames={tunnelNames}
-                onOpenShares={() => setActivePage('tunnels')}
-              />
-            )}
-
             {activePage === 'tunnels' && (
               <TunnelsPage
                 portInput={portInput}
@@ -875,7 +865,6 @@ export default function App() {
                 onRenameTunnel={onRenameTunnel}
                 clientId={session.id}
                 onTunnelUpdated={handleTunnelUpdated}
-                onViewFeedback={() => setActivePage('feedback')}
               />
             )}
 

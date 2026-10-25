@@ -1918,15 +1918,14 @@ a.ps-btn { text-decoration: none; }
 }
 
 /* Feedback */
-.ps-feedback { display: flex; flex-direction: column; gap: 12px; }
-.ps-feedback-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ps-feedback-group { padding: 0; overflow: hidden; }
-.ps-feedback-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
-.ps-feedback-share { font-size: 13px; font-weight: 600; color: var(--text-strong); }
-.ps-feedback-path { font-family: var(--mono-font); font-size: 11.5px; color: var(--text-soft); word-break: break-all; }
-.ps-feedback-note { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
-.ps-feedback-note + .ps-feedback-note { border-top: 1px solid var(--border); }
-.ps-feedback-note.resolved .ps-feedback-body { color: var(--text-soft); text-decoration: line-through; text-decoration-color: var(--border-bright); }
+.ps-share-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.ps-share-notes li { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.ps-share-notes li + li { border-top: 1px solid var(--border); }
+.ps-share-notes li.resolved .ps-feedback-body { color: var(--text-soft); text-decoration: line-through; text-decoration-color: var(--border-bright); }
+.ps-share-notes .ps-feedback-meta { flex-wrap: wrap; }
+.ps-share-note-path { color: var(--text-muted); font-family: var(--mono-font); text-decoration: underline; text-underline-offset: 2px; }
+.ps-share-note-path:hover { color: var(--text); }
+.ps-share-row-notes { padding: 1px 7px; border-radius: 99px; font-size: 11px; font-weight: 600; color: var(--text-accent); background: var(--accent-dim); border: 1px solid var(--accent-border); }
 .ps-feedback-body { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ps-feedback-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--text-soft); }
 .ps-feedback-actions { display: flex; gap: 6px; }

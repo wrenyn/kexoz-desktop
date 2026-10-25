@@ -493,7 +493,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, onManageAd
                     <div className="ps-ns-toggles">
                       <ToggleRow
                         title="Interactive preview"
-                        desc="Visitors can click anywhere on the page to leave a note. You see the notes on the Feedback page."
+                        desc="Visitors can click anywhere on the page to leave a note. You read them in this share's settings."
                         checked={preview}
                         onChange={setPreview}
                       />
