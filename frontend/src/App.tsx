@@ -567,8 +567,8 @@ export default function App() {
     if (!session || !domainInput.trim()) return
     setIsBusy(true)
     try {
-      const customDomain = await updateCustomDomain(session.id, domainInput.trim())
-      setSession(cur => cur ? { ...cur, customDomain } : cur)
+      const { customDomain, dnsTarget } = await updateCustomDomain(session.id, domainInput.trim())
+      setSession(cur => cur ? { ...cur, customDomain, dnsTarget } : cur)
       setDomainInput(customDomain)
       if (selectedTunnelId) {
         const selected = persistentTunnels.find(tunnel => tunnel.id === selectedTunnelId)
@@ -579,7 +579,7 @@ export default function App() {
           if (updated.tunnelType === 'folder' && tunnelConnections.current.has(updated.id)) await connectShare(session.id, updated)
         }
       }
-      toast.success('Custom domain added. Now add the DNS record.')
+      toast.success('Domain added. Now add the DNS record shown on this page.')
     } catch (err) {
       toast.error(extractError(err))
     } finally { setIsBusy(false) }

@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { ClientSession, PersistentTunnel } from '../../lib/api'
-import { ROOT_DOMAIN, tierOf, upgradeUrl } from '../../lib/api'
+import { ROOT_DOMAIN, checkCustomDomain, tierOf, upgradeUrl } from '../../lib/api'
 import { normalizeSubdomain } from '../../lib/utils'
 
 type Props = {
@@ -15,6 +15,104 @@ type Props = {
 }
 
 const ADDRESS_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/
+const DNS_RECHECK_MS = 20_000
+
+/** The record's Name field: "@" for a root domain like example.com, else the part before it. */
+const recordName = (domain: string) => {
+  const labels = domain.split('.')
+  return labels.length <= 2 ? '@' : labels.slice(0, -2).join('.')
+}
+
+function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; domain: string; dnsTarget: string }) {
+  const [status, setStatus] = useState<'unknown' | 'ready' | 'waiting'>('unknown')
+  const [checking, setChecking] = useState(false)
+  const [target, setTarget] = useState(dnsTarget)
+  const [copied, setCopied] = useState<string | null>(null)
+  const name = recordName(domain)
+  const ready = status === 'ready'
+
+  const check = useCallback(async () => {
+    try {
+      const result = await checkCustomDomain(clientId)
+      if (result.dnsTarget) setTarget(result.dnsTarget)
+      setStatus(result.ready ? 'ready' : 'waiting')
+    } catch {
+      setStatus(current => current === 'unknown' ? 'waiting' : current)
+    } finally {
+      setChecking(false)
+    }
+  }, [clientId])
+
+  useEffect(() => {
+    if (ready) return
+    void check()
+    const timer = window.setInterval(() => void check(), DNS_RECHECK_MS)
+    return () => window.clearInterval(timer)
+  }, [check, ready])
+
+  const copy = (key: string, text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(key)
+      window.setTimeout(() => setCopied(current => (current === key ? null : current)), 1600)
+    })
+  }
+
+  const badge =
+    status === 'ready' ? <span className="ps-badge ps-badge-green">Connected</span> :
+    status === 'unknown' ? <span className="ps-badge ps-badge-gray">Checking…</span> :
+    <span className="ps-badge ps-badge-yellow">Waiting for DNS</span>
+
+  return (
+    <div className="ps-card animate-fade-up delay-100">
+      <div className="ps-domain-item">
+        <div className="ps-domain-info">
+          <div className="ps-domain-name">{domain}</div>
+          <div className="ps-domain-sub">Custom domain</div>
+        </div>
+        {badge}
+        <div className="ps-domain-actions">
+          {status === 'waiting' && (
+            <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={checking} onClick={() => { setChecking(true); void check() }}>
+              {checking ? 'Checking…' : 'Check again'}
+            </button>
+          )}
+          <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => copy('link', `https://${domain}`)}>
+            {copied === 'link' ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      </div>
+      {!ready && (
+        <div className="ps-domains-section" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="ps-domains-section-title">DNS record</div>
+          <p className="ps-domains-section-text">
+            Add this record at your DNS provider. It usually starts working within a few minutes, and this page updates on its own.
+          </p>
+          {target ? (
+            <div className="ps-dns-record">
+              <span className="ps-dns-head">Type</span>
+              <span className="ps-dns-head">Name</span>
+              <span className="ps-dns-head">Value</span>
+              <span />
+              <span className="ps-dns-type">CNAME</span>
+              <span className="ps-dns-value">{name}</span>
+              <span className="ps-dns-value ps-dns-target">{target}</span>
+              <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => copy('target', target)}>
+                {copied === 'target' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ) : (
+            <p className="ps-domains-section-text">Getting your record…</p>
+          )}
+          {name === '@' && (
+            <p className="field-help">
+              @ means {domain} itself. If your provider doesn’t allow a CNAME there, use an ALIAS or ANAME record with the same value, or use a subdomain like app.{domain}.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function DomainsPage({
   session, tunnels, onAddAddress, onRemoveAddress,
@@ -140,36 +238,7 @@ export default function DomainsPage({
         </div>
 
         {session?.customDomain && (
-          <div className="ps-card animate-fade-up delay-100">
-            <div className="ps-domain-item">
-              <div className="ps-domain-info">
-                <div className="ps-domain-name">{session.customDomain}</div>
-                <div className="ps-domain-sub">Custom domain</div>
-              </div>
-              <span className="ps-badge ps-badge-yellow">Waiting for DNS</span>
-              <div className="ps-domain-actions">
-                <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => copyLink(session.customDomain)}>
-                  {copied === session.customDomain ? 'Copied' : 'Copy link'}
-                </button>
-              </div>
-            </div>
-            <div className="ps-domains-section" style={{ borderTop: '1px solid var(--border)' }}>
-              <div className="ps-domains-section-title">DNS record</div>
-              <p className="ps-domains-section-text">
-                Add this record at your DNS provider. It can take a few hours to start working.
-              </p>
-              <div className="ps-code">
-                <div style={{ display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: '0 24px' }}>
-                  <span style={{ color: 'var(--text-soft)' }}>Type</span>
-                  <span style={{ color: 'var(--text-soft)' }}>Name</span>
-                  <span style={{ color: 'var(--text-soft)' }}>Value</span>
-                  <span style={{ color: 'var(--cyan)' }}>CNAME</span>
-                  <span style={{ color: 'var(--text)' }}>{session.customDomain.split('.')[0]}</span>
-                  <span style={{ color: 'var(--text-accent)' }}>{session.subdomain}.{ROOT_DOMAIN}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <CustomDomainCard key={session.customDomain} clientId={session.id} domain={session.customDomain} dnsTarget={session.dnsTarget} />
         )}
 
         {!isPro && (
@@ -205,7 +274,7 @@ export default function DomainsPage({
             <form onSubmit={e => { onDomainSubmit(e); setShowAddCustom(false) }}>
               <div className="ps-confirm-body">
                 <h2 className="ps-confirm-title" id="custom-domain-title">Add custom domain</h2>
-                <p className="ps-confirm-message">Use a domain you own, like app.yourcompany.com.</p>
+                <p className="ps-confirm-message">Use a domain you own, like app.yourcompany.com. Next you’ll get a DNS record to add at your provider.</p>
                 <div className="ps-ns-field" style={{ marginTop: 8 }}>
                   <label className="ps-label" htmlFor="custom-domain-input">Domain</label>
                   <input
@@ -216,9 +285,6 @@ export default function DomainsPage({
                     placeholder="app.yourdomain.com"
                     autoFocus
                   />
-                  <p className="field-help">
-                    Then add a CNAME record pointing to <code>{session?.subdomain}.{ROOT_DOMAIN}</code>.
-                  </p>
                 </div>
               </div>
               <div className="ps-confirm-footer">

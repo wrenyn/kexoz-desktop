@@ -10,6 +10,8 @@ export type ClientSession = {
   subdomain: string
   port: number | null
   customDomain: string
+  /** Host the custom domain's CNAME record points at. */
+  dnsTarget: string
   requireAuth: boolean
   plan: string
   bandwidthUsed: number
@@ -25,6 +27,7 @@ export type IdentityResponse = {
   subdomain?: string | null
   port?: number | null
   customDomain?: string | null
+  dnsTarget?: string | null
   requireAuth?: boolean
   plan?: string
   bandwidthUsed?: number
@@ -44,7 +47,7 @@ export type AvailabilityResponse = {
 }
 
 export type PortResponse = { port?: number }
-export type DomainResponse = { customDomain: string }
+export type DomainResponse = { customDomain: string; dnsTarget?: string }
 export type PathRoute = { path: string; port: number }
 
 export type TunnelType = 'http' | 'tcp' | 'udp' | 'e2e' | 'pty' | 'folder'
@@ -127,6 +130,7 @@ export const ensureClientIdentity = async (existingId: string | null): Promise<C
     domains,
     port: parsePort(data.port),
     customDomain: data.customDomain?.trim().toLowerCase() ?? '',
+    dnsTarget: data.dnsTarget?.trim().toLowerCase() ?? '',
     requireAuth: data.requireAuth ?? false,
     plan: data.plan ?? 'free',
     bandwidthUsed: data.bandwidthUsed ?? 0,
@@ -210,9 +214,15 @@ export const updateExposedPort = async (clientId: string, port: number): Promise
   return parsePort(data.port) ?? port
 }
 
-export const updateCustomDomain = async (clientId: string, domain: string): Promise<string> => {
+export const updateCustomDomain = async (clientId: string, domain: string): Promise<{ customDomain: string; dnsTarget: string }> => {
   const { data } = await axios.put<DomainResponse>(`${API_BASE_URL}/client/domain`, { clientId, domain })
-  return data.customDomain
+  return { customDomain: data.customDomain, dnsTarget: data.dnsTarget ?? '' }
+}
+
+/** Whether the custom domain's DNS record already points at its target. */
+export const checkCustomDomain = async (clientId: string): Promise<{ ready: boolean; dnsTarget: string }> => {
+  const { data } = await axios.get<{ ready?: boolean; dnsTarget?: string }>(`${API_BASE_URL}/client/domain/check`, { params: { clientId } })
+  return { ready: Boolean(data.ready), dnsTarget: data.dnsTarget ?? '' }
 }
 
 export type ClientStatsResponse = {
