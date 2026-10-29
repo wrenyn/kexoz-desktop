@@ -12,10 +12,27 @@ const net = require('node:net');
 const STREAM_WINDOW = 2 * 1024 * 1024;
 const WINDOW_PARAM = '2m';
 
-function withLargeWindow(tunnelUrl) {
+// routes=1 asks the gateway to start every stream with the local port it is
+// for (2 bytes, big-endian; 0 = the share's own port), so one address can
+// serve /api from one port and everything else from another.
+function agentUrl(tunnelUrl) {
   const url = new URL(tunnelUrl);
   url.searchParams.set('window', WINDOW_PARAM);
+  url.searchParams.set('routes', '1');
   return url.toString();
+}
+
+/** Reads the port header, then hands over the port and any bytes after it. */
+function readPortHeader(stream, done) {
+  let buffered = Buffer.alloc(0);
+  const onData = (chunk) => {
+    buffered = Buffer.concat([buffered, chunk]);
+    if (buffered.length < 2) return;
+    stream.removeListener('data', onData);
+    stream.pause();
+    done(buffered.readUInt16BE(0), buffered.subarray(2));
+  };
+  stream.on('data', onData);
 }
 
 // yamux-js drops the window a peer grants in the frame that opens a stream,
@@ -122,14 +139,14 @@ function pipeUdp(stream, port) {
   stream.on('error', () => localSocket.close());
 }
 
-function pipeTcp(stream, port, onLogEntry) {
+function pipeTcp(stream, port, onLogEntry, initial) {
   const localSocket = net.connect(port, '127.0.0.1');
   let reqLogId = null;
   let reqStartTime = null;
   let firstReqChunk = true;
   let firstRespChunk = true;
 
-  stream.on('data', (data) => {
+  const onStreamData = (data) => {
     if (firstReqChunk && onLogEntry) {
       firstReqChunk = false;
       try {
@@ -143,6 +160,7 @@ function pipeTcp(stream, port, onLogEntry) {
             id: reqLogId,
             method,
             path,
+            port,
             status: null,
             timestamp: new Date().toISOString(),
             durationMs: null,
@@ -153,7 +171,10 @@ function pipeTcp(stream, port, onLogEntry) {
       } catch {}
     }
     forward(stream, localSocket, data);
-  });
+  };
+  stream.on('data', onStreamData);
+  if (initial && initial.length) onStreamData(initial);
+  stream.resume();
 
   localSocket.on('data', (data) => {
     if (firstRespChunk && reqLogId && onLogEntry) {
@@ -207,7 +228,8 @@ function describeDrop(message, code) {
   if (status) {
     const value = Number(status[1]);
     if (value === 402) return 'Plan limit reached or monthly data used up';
-    if (value === 401 || value === 403) return 'The server refused this share';
+    if (value === 403) return 'Your plan is running as many shares as it allows, or the account is suspended';
+    if (value === 401) return 'The server refused this share';
     if (value === 404) return 'The share no longer exists on the server';
     if (value === 429) return 'Too many connection attempts';
     if (value >= 500) return `Server error (${value})`;
@@ -274,7 +296,7 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
     teardown();
     onStateChange('connecting');
     lastError = '';
-    const socket = new WebSocket(withLargeWindow(tunnelUrl));
+    const socket = new WebSocket(agentUrl(tunnelUrl));
     ws = socket;
 
     socket.on('open', () => {
@@ -286,12 +308,20 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
       const duplex = createWebSocketStream(socket);
       duplex.on('error', () => socket.terminate());
       const yamux = new Server((stream) => {
-        if (!currentPort) {
-          stream.close();
-          return;
-        }
-        if (tunnelType === 'udp') pipeUdp(stream, currentPort);
-        else pipeTcp(stream, currentPort, onLogEntry);
+        readPortHeader(stream, (routedPort, rest) => {
+          const port = routedPort || currentPort;
+          if (!port) {
+            stream.close();
+            return;
+          }
+          if (tunnelType === 'udp') {
+            pipeUdp(stream, port);
+            if (rest.length) stream.unshift(rest);
+            stream.resume();
+          } else {
+            pipeTcp(stream, port, onLogEntry, rest);
+          }
+        });
       }, { maxStreamWindowSize: STREAM_WINDOW });
       yamux.on('error', () => socket.terminate());
       session = yamux;
@@ -337,4 +367,4 @@ function connectTunnel({ tunnelUrl, tunnelType, port, onLogEntry, onStateChange 
   };
 }
 
-module.exports = { connectTunnel, describeDrop };
+module.exports = { connectTunnel, describeDrop, agentUrl, readPortHeader };

@@ -1,41 +1,43 @@
 # Kexoz Desktop
 
-**Share your local apps, terminals and files securely.**
+**The easiest way to share a local app, get feedback, fix it, and share the updated version.**
 
-Kexoz Desktop is the graphical client for [Kexoz](https://kexoz.dev). Pick something on your
-machine — a dev server, a database, a shell or a folder — and get a link you can send to anyone,
-with access control, expiry and live traffic built in. Built and maintained by
-[Wrenyn](https://wrenyn.com).
+Kexoz Desktop is the graphical client for [Kexoz](https://kexoz.dev). Create a project for the app
+you're building, add the ports it runs on, and get a link you can send to anyone, with access
+control, expiry and live traffic built in. Built and maintained by [Wrenyn](https://wrenyn.com).
 
-## What you can share
+## How it works
+
+1. **Create a project** for your app.
+2. **Add shares** to it. Either give the frontend and backend their own links, or put the whole
+   app on one link and route paths: `/api` → `localhost:8080`, everything else → `localhost:3000`.
+3. **Start the project** with one click (or `kexoz start <name>` from the CLI) and send the link.
 
 | Share | What visitors get |
 | --- | --- |
-| **Web apps** | A stable `https://<name>.kexoz.dev` URL for any local port, with path routing (`/api` → `:7000`) |
+| **Web apps** | A stable `https://<name>.kexoz.dev` URL for any local port, with path routing to other local ports |
 | **Private (E2E) links** | TLS terminates on your machine; the gateway only relays encrypted bytes |
 | **TCP / UDP** | A public port for Postgres, SSH, game servers, DNS and other raw protocols |
-| **Terminals** | A browser terminal for pairing or support — always behind a password, optionally view-only |
-| **Folders** | A file browser for a local folder: read-only or read & write, zip download, uploads, secret files excluded by default |
 
 ## Control who gets in
 
 - **Private or public** — private shares ask visitors for the password you set; public warnings are explicit.
-- **Permissions** — read-only shares accept only safe requests; read-only terminals are view-only.
+- **Permissions** — read-only shares accept only safe requests.
 - **Pause, resume and expiry** — stop traffic instantly, set an expiry or make a link one-time.
 - **Custom domains** — use your own domain instead of a `kexoz.dev` subdomain (Pro).
 
 ## Built-in tools
 
 - **Request inspector** — every request with method, path, status, latency, headers and bodies; search bodies, edit a request (webhooks included) and resend it to your app, export HAR or JSON.
-- **Interactive preview** — turn it on for a web share and visitors can pin notes anywhere on the page; read, resolve and delete them on the Feedback page.
-- **Projects** — group the shares one app needs and start them together, or run `kexoz start <name>` from the CLI.
-- **Connection dashboard** — status, 24-hour uptime, reconnects and the reason for each drop, plus one-click diagnostics (internet, DNS, Kexoz servers, local ports).
-- **Local port detection** — every app listening on this computer, Docker containers included, is offered when you share a port.- **Tray and auto-start** — keep shares running in the background.
+- **Visual review** — turn it on for a web share and visitors can pin notes anywhere on the page; read, resolve and delete them from the share's panel.
+- **Connection dashboard** — status, 24-hour uptime, reconnects and the reason for each drop, plus one-click diagnostics (internet, DNS, Kexoz servers, and every local port a running share or route uses).
+- **Local port detection** — every app listening on this computer, Docker containers included, is offered when you share a port.
+- **Tray** — keep shares running in the background.
 
 ## Tech stack
 
 - **Shell:** Electron (Electron Forge), plain JavaScript in `electron/`
-- **Agent:** WebSocket + [yamux](https://github.com/hashicorp/yamux) multiplexing, a jailed loopback file server for folder shares
+- **Agent:** WebSocket + [yamux](https://github.com/hashicorp/yamux) multiplexing; the gateway prefixes each stream with the local port picked by the share's path routes
 - **UI:** React + Vite + TypeScript in `frontend/`, plain CSS with the Kexoz design tokens
 
 ## Development

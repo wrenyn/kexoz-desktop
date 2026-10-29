@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react'
 import { ROOT_DOMAIN, type PersistentTunnel, type RequestLogEntry } from '../../lib/api'
 import { isNoiseRequestPath } from '../../lib/tunnel'
+import { redactBody, redactHeaders, redactPath } from '../../lib/redact'
+import { formatBody, formatTime, methodClass, statusClass } from '../../lib/httpView'
+import { portForPath } from '../../lib/shares'
+
+const SLOW_MS = 1000
 
 type Props = {
   requestLog: RequestLogEntry[]
@@ -29,14 +34,10 @@ function requestHost(entry: RequestLogEntry): string {
 
 /** The local port a request was forwarded to, honouring path routes. */
 function localPortFor(entry: RequestLogEntry, tunnels: PersistentTunnel[]): number | null {
+  if (entry.port) return entry.port
   const host = requestHost(entry)
   const tunnel = tunnels.find(t => (t.subdomain && `${t.subdomain}.${ROOT_DOMAIN}` === host) || (t.customDomain && t.customDomain === host))
-  if (!tunnel || tunnel.tunnelType === 'folder') return null
-  const path = entry.path.split('?')[0]
-  const route = [...(tunnel.pathRoutes ?? [])]
-    .filter(r => r.path !== '/' && (path === r.path || path.startsWith(`${r.path.replace(/\/$/, '')}/`)))
-    .sort((a, b) => b.path.length - a.path.length)[0]
-  return route?.port ?? tunnel.port
+  return tunnel ? portForPath(tunnel, entry.path) : null
 }
 
 function parseHeaderText(text: string): Record<string, string> {
@@ -68,7 +69,9 @@ function toHar(entries: RequestLogEntry[], base: (entry: RequestLogEntry) => str
       version: '1.2',
       creator: { name: 'Kexoz', version: '1' },
       entries: entries.map(entry => {
-        const url = `${base(entry).replace(/\/$/, '')}${entry.path}`
+        const url = `${base(entry).replace(/\/$/, '')}${redactPath(entry.path, showSensitive)}`
+        const body = redactBody(entry.body, showSensitive)
+        const responseBody = redactBody(entry.responseBody, showSensitive)
         let query: { name: string; value: string }[] = []
         try { query = [...new URL(url).searchParams.entries()].map(([name, value]) => ({ name, value })) } catch { /* relative */ }
         return {
@@ -82,8 +85,8 @@ function toHar(entries: RequestLogEntry[], base: (entry: RequestLogEntry) => str
             queryString: query,
             cookies: [],
             headersSize: -1,
-            bodySize: entry.body ? entry.body.length : 0,
-            ...(entry.body ? { postData: { mimeType: header(entry.headers, 'content-type') || 'application/octet-stream', text: entry.body } } : {}),
+            bodySize: body ? body.length : 0,
+            ...(body ? { postData: { mimeType: header(entry.headers, 'content-type') || 'application/octet-stream', text: body } } : {}),
           },
           response: {
             status: entry.status ?? 0,
@@ -91,7 +94,7 @@ function toHar(entries: RequestLogEntry[], base: (entry: RequestLogEntry) => str
             httpVersion: 'HTTP/1.1',
             headers: pairs(entry.responseHeaders),
             cookies: [],
-            content: { size: entry.responseBody?.length ?? 0, mimeType: header(entry.responseHeaders, 'content-type') || 'application/octet-stream', text: entry.responseBody ?? '' },
+            content: { size: responseBody?.length ?? 0, mimeType: header(entry.responseHeaders, 'content-type') || 'application/octet-stream', text: responseBody ?? '' },
             redirectURL: header(entry.responseHeaders, 'location'),
             headersSize: -1,
             bodySize: -1,
@@ -112,62 +115,17 @@ const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: 'response', label: 'Response' },
 ]
 
-function methodClass(method: string) {
-  return `method-tag method-tag-${method.toLowerCase()}`
-}
-
-function statusClass(status: number | null) {
-  if (!status) return ''
-  if (status < 300) return 'status-2xx'
-  if (status < 400) return 'status-3xx'
-  if (status < 500) return 'status-4xx'
-  return 'status-5xx'
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-const SENSITIVE_HEADERS = /authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token/i
-
-function escapeHtml(value: string) {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function syntaxHighlightJSON(json: string) {
-  return escapeHtml(json).replace(/(("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?))/g, (match) => {
-    let cls = 'var(--blue)'
-    if (/^"/.test(match)) {
-      if (/:$/.test(match)) { cls = 'var(--text)' }
-      else { cls = 'var(--green)' }
-    } else if (/true|false/.test(match)) {
-      cls = 'var(--yellow)'
-    } else if (/null/.test(match)) {
-      cls = 'var(--red)'
-    }
-    return `<span style="color: ${cls}">${match}</span>`
-  })
-}
-
-function formatBody(body: string | undefined) {
-  if (!body) return ''
-  try { return syntaxHighlightJSON(JSON.stringify(JSON.parse(body), null, 2)) } catch { return escapeHtml(body) }
-}
-
-function redactHeaders(headers: Record<string, string> | undefined, showSensitive: boolean) {
-  return Object.entries(headers ?? {}).map(([key, value]) => [key, !showSensitive && SENSITIVE_HEADERS.test(key) ? '[hidden]' : value] as const)
-}
-
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-function curlCommand(entry: RequestLogEntry, base: string) {
-  const headers = Object.entries(entry.headers ?? {})
+function curlCommand(entry: RequestLogEntry, base: string, showSensitive: boolean) {
+  const headers = redactHeaders(entry.headers, showSensitive)
     .filter(([key]) => !['host', 'x-forwarded-host'].includes(key.toLowerCase()))
     .map(([key, value]) => ` -H ${shellQuote(`${key}: ${value}`)}`).join('')
-  const body = entry.body ? ` --data-raw ${shellQuote(entry.body)}` : ''
-  return `curl -X ${entry.method}${headers}${body} ${shellQuote(base.replace(/\/$/, '') + entry.path)}`
+  const raw = redactBody(entry.body, showSensitive)
+  const body = raw ? ` --data-raw ${shellQuote(raw)}` : ''
+  return `curl -X ${entry.method}${headers}${body} ${shellQuote(base.replace(/\/$/, '') + redactPath(entry.path, showSensitive))}`
 }
 
 function HeaderList({ headers, showSensitive, empty }: { headers: Record<string, string> | undefined; showSensitive: boolean; empty: string }) {
@@ -262,6 +220,9 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     }
     const entries = displayLog.map(entry => ({
       ...entry,
+      path: redactPath(entry.path, showSensitive),
+      body: redactBody(entry.body, showSensitive),
+      responseBody: redactBody(entry.responseBody, showSensitive),
       headers: Object.fromEntries(redactHeaders(entry.headers, showSensitive)),
       responseHeaders: Object.fromEntries(redactHeaders(entry.responseHeaders, showSensitive)),
     }))
@@ -331,7 +292,11 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
   const displayLog = hostLog.filter(entry => {
     if (!showFrameworkRequests && isNoiseRequestPath(entry.path)) return false
     if (methodFilter !== 'all' && entry.method !== methodFilter) return false
-    if (statusFilter !== 'all' && !String(entry.status ?? '').startsWith(statusFilter)) return false
+    if (statusFilter === 'failed') {
+      if (entry.status != null && entry.status < 400) return false
+    } else if (statusFilter === 'slow') {
+      if ((entry.durationMs ?? 0) < SLOW_MS) return false
+    } else if (statusFilter !== 'all' && !String(entry.status ?? '').startsWith(statusFilter)) return false
     const query = search.trim().toLowerCase()
     if (!query) return true
     return `${entry.method} ${entry.path}`.toLowerCase().includes(query) ||
@@ -342,7 +307,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
 
   const copyCurl = async () => {
     if (!selected) return
-    await navigator.clipboard.writeText(curlCommand(selected, replayBase(selected)))
+    await navigator.clipboard.writeText(curlCommand(selected, replayBase(selected), showSensitive))
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1500)
   }
@@ -438,6 +403,8 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
               </select>
               <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Status">
                 <option value="all">All statuses</option>
+                <option value="failed">Failed</option>
+                <option value="slow">Slower than 1 s</option>
                 <option value="2">2xx</option>
                 <option value="3">3xx</option>
                 <option value="4">4xx</option>
@@ -449,7 +416,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
               </label>
               <label className="ps-req-check">
                 <input type="checkbox" checked={showSensitive} onChange={event => setShowSensitive(event.target.checked)} />
-                Show sensitive headers
+                Show secrets
               </label>
             </div>
 
@@ -471,7 +438,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                       <span className={methodClass(entry.method)}>{entry.method}</span>
                       <span className="ps-req-path">
                         {showHostInRows && requestHost(entry) && <span className="ps-req-host">{shortHost(requestHost(entry))}</span>}
-                        {entry.path}
+                        {redactPath(entry.path, showSensitive)}
                       </span>
                       <div className="ps-req-meta">
                         <span className={`ps-req-status ${statusClass(entry.status)}`}>{entry.status ?? 'error'}</span>
@@ -506,7 +473,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                     <div className="ps-detail-panel-header">
                       <div className="ps-detail-title-row">
                         <span className={methodClass(selected.method)}>{selected.method}</span>
-                        <span className="ps-detail-path" title={selected.path}>{selected.path}</span>
+                        <span className="ps-detail-path" title={redactPath(selected.path, showSensitive)}>{redactPath(selected.path, showSensitive)}</span>
                         <span className={`ps-badge ${selected.status && selected.status < 400 ? 'ps-badge-green' : 'ps-badge-red'}`}>
                           {selected.status ?? 'Error'}
                         </span>
@@ -627,7 +594,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           {selected.method === 'GET' ? (
                             <div className="ps-code" style={{ color: 'var(--text-soft)' }}>GET requests have no body</div>
                           ) : (
-                            <div className="ps-code" style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: formatBody(selected.body) || 'Empty' }} />
+                            <div className="ps-code" style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: formatBody(redactBody(selected.body, showSensitive)) || 'Empty' }} />
                           )}
                         </div>
                       )}
@@ -639,7 +606,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           </div>
                           <div>
                             <div className="ps-detail-label">Response body</div>
-                            <div className="ps-code" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} dangerouslySetInnerHTML={{ __html: formatBody(selected.responseBody) || 'Empty' }} />
+                            <div className="ps-code" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} dangerouslySetInnerHTML={{ __html: formatBody(redactBody(selected.responseBody, showSensitive)) || 'Empty' }} />
                           </div>
                         </>
                       )}

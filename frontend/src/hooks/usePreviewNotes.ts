@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { deletePreviewNote, listPreviewNotes, setPreviewNoteStatus, type PreviewNote } from '../lib/api'
 import { extractError } from '../lib/utils'
+import { notesChanged } from './useOpenFeedback'
 
 const POLL_MS = 20000
 
@@ -27,8 +28,9 @@ export function usePreviewNotes(clientId: string) {
   const setStatus = async (note: PreviewNote, status: PreviewNote['status']) => {
     setBusyId(note.id)
     try {
-      await setPreviewNoteStatus(clientId, note.id, status)
-      setNotes(current => current.map(item => item.id === note.id ? { ...item, status } : item))
+      const updated = await setPreviewNoteStatus(clientId, note.id, status)
+      setNotes(current => current.map(item => item.id === note.id ? (updated ?? { ...item, status }) : item))
+      notesChanged()
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -41,6 +43,7 @@ export function usePreviewNotes(clientId: string) {
     try {
       await deletePreviewNote(clientId, note.id)
       setNotes(current => current.filter(item => item.id !== note.id))
+      notesChanged()
     } catch (err) {
       toast.error(extractError(err))
     } finally {

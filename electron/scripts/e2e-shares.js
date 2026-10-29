@@ -1,17 +1,13 @@
-// End-to-end check of port and folder shares: the real API and gateway, the
-// desktop agent (tunnel.js) and the folder server, driven like the desktop app.
+// End-to-end check of port shares and project path routing: the real API and
+// gateway and the desktop agent (tunnel.js), driven like the desktop app.
 //
 // Needs a running server (with Postgres) whose KEXOZ_ROOT_DOMAIN matches
 // KEXOZ_E2E_ROOT, e.g.:
 //   KEXOZ_E2E_API=http://127.0.0.1:19080 KEXOZ_E2E_ROOT=kexoz.test npm run e2e
 const crypto = require('node:crypto');
 const http = require('node:http');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 
 const { connectTunnel } = require(process.env.TUNNEL_MODULE || '../src/tunnel.js');
-const { createFolderServer } = require('../src/fileServer.js');
 
 const API = process.env.KEXOZ_E2E_API || 'http://127.0.0.1:9080';
 const ROOT = process.env.KEXOZ_E2E_ROOT || 'kexoz.test';
@@ -139,163 +135,69 @@ async function main() {
   local.close();
 
   // ---------- Validation rules ----------
-  let v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-pty-${rand()}`, port: 7681, pathRoutes: [], tunnelType: 'pty', access: 'public' });
-  check('public terminal is refused', v.status === 400, `${v.status} ${JSON.stringify(v.data)}`);
+  let v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-pty-${rand()}`, port: 7681, pathRoutes: [], tunnelType: 'pty', password: 's3cret-pass' });
+  check('terminal shares are no longer accepted', v.status === 400, `${v.status} ${JSON.stringify(v.data)}`);
+  v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-dir-${rand()}`, port: 1, pathRoutes: [], tunnelType: 'folder' });
+  check('folder shares are no longer accepted', v.status === 400, `${v.status} ${JSON.stringify(v.data)}`);
   v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-tcp-${rand()}`, port: 5432, pathRoutes: [], tunnelType: 'tcp', access: 'private', password: 'x' });
   check('private raw TCP is refused', v.status === 400, `${v.status} ${JSON.stringify(v.data)}`);
   v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-tcp-${rand()}`, port: 5432, pathRoutes: [], tunnelType: 'tcp', access: 'public', permissions: 'read' });
   check('read-only raw TCP is refused', v.status === 400, `${v.status} ${JSON.stringify(v.data)}`);
-  // ---------- Folder share ----------
   await api('DELETE', `/client/tunnels/${web.id}`, null, `?clientId=${clientId}`);
+
+  // ---------- Project with path routing ----------
+  // A deleted share keeps its address, and the free plan has one.
   authId = '';
   const owner = (await api('POST', '/client/identity', {})).data.id;
   authId = owner;
-  return folderSection(owner);
+  return routedProjectSection(owner);
 }
 
-async function folderSection(clientId) {
-  let r, p;
-  const v = await api('POST', '/client/tunnels', { clientId, subdomain: `e2e-def-${rand()}`, port: 3000, pathRoutes: [{ path: '/', port: 3000 }], tunnelType: 'http', password: 'pass1' });
-  check('share with a password and no access defaults to private', v.status < 300 && v.data.access === 'private', `${v.status} ${JSON.stringify(v.data)}`);
-  if (v.data?.id) await api('DELETE', `/client/tunnels/${v.data.id}`, null, `?clientId=${clientId}`);
-  // A deleted share keeps its address, and the free plan has one.
-  authId = '';
-  clientId = (await api('POST', '/client/identity', {})).data.id;
-  authId = clientId;
-
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kexoz-folder-'));
-  fs.writeFileSync(path.join(dir, 'readme.txt'), 'hello from the shared folder');
-  fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1');
-  fs.writeFileSync(path.join(dir, 'id_rsa'), 'PRIVATE KEY');
-  fs.mkdirSync(path.join(dir, 'node_modules'));
-  fs.writeFileSync(path.join(dir, 'node_modules', 'x.js'), 'x');
-  fs.mkdirSync(path.join(dir, 'docs', 'private'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'docs', 'guide.md'), '# guide');
-  fs.writeFileSync(path.join(dir, 'docs', 'private', 'plan.txt'), 'hidden plan');
-  fs.writeFileSync(path.join(dir, 'big.bin'), Buffer.alloc(200000, 7));
-
-  const folderSub = `e2e-folder-${rand()}`;
-  const folderHost = `${folderSub}.${ROOT}`;
-  const fc = await api('POST', '/client/tunnels', {
-    clientId, subdomain: folderSub, customDomain: '', port: 1, requireAuth: false, pathRoutes: [{ path: '/', port: 1 }], tunnelType: 'folder', access: 'public',
+function namedServer(name) {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(`${name}:${req.method}:${req.url}`);
   });
-  let folderShare = fc.data;
-  check('create folder share', fc.status < 300 && folderShare.tunnelType === 'folder', `${fc.status} ${JSON.stringify(fc.data)}`);
-  check('folder share defaults to read-only', folderShare.permissions === 'read', folderShare.permissions);
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
 
-  const fs1 = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, active: true }, `?clientId=${clientId}`);
-  folderShare = fs1.data;
-  check('start folder share', fs1.status === 200 && folderShare.active, JSON.stringify(fs1.data));
+async function routedProjectSection(clientId) {
+  const project = await api('POST', '/client/projects', { clientId, name: `Shop ${rand()}`, tunnelIds: [] });
+  check('create a project first', project.status === 201 && !!project.data.projectId, JSON.stringify(project.data));
 
-  let server = createFolderServer({ root: dir, readOnly: true, excludes: ['.git', 'node_modules', 'docs/private/'], hosts: [folderHost] });
-  let folderPort = await server.listen();
-  let folderConn = await connect(clientId, folderShare.id, 'folder', folderPort);
-  check('agent connects for folder share', folderConn.connected);
-
-  r = await request({ host: folderHost, headers: { Accept: 'text/html' } });
-  const listing = r.body.toString();
-  check('folder listing served through the gateway', r.status === 200 && listing.includes('readme.txt') && listing.includes('docs'), `${r.status} ${listing.slice(0, 200)}`);
-  check('listing hides .env, private keys and node_modules', !listing.includes('.env') && !listing.includes('id_rsa') && !listing.includes('node_modules'), listing.slice(0, 400));
-  r = await request({ host: folderHost, pathName: '/readme.txt' });
-  check('file download works', r.status === 200 && r.body.toString() === 'hello from the shared folder', `${r.status} ${r.body}`);
-  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html' } });
-  check('subfolder listing hides the locked folder', r.status === 200 && r.body.toString().includes('guide.md') && !r.body.toString().includes('plan.txt') && !/>private</.test(r.body.toString()), `${r.status}`);
-  for (const blocked of ['/.env', '/id_rsa', '/node_modules/x.js', '/docs/private/plan.txt', '/%2e%2e/%2e%2e/Windows/win.ini', '/..%2f..%2fWindows/win.ini']) {
-    r = await request({ host: folderHost, pathName: blocked });
-    check(`blocked: ${blocked}`, r.status >= 400 && r.status < 500, `${r.status} ${r.body.toString().slice(0, 80)}`);
-  }
-  r = await request({ host: folderHost, pathName: '/big.bin', headers: { Range: 'bytes=100-199' } });
-  check('resumable download (Range -> 206, 100 bytes)', r.status === 206 && r.body.length === 100, `${r.status} ${r.body.length}`);
-  r = await request({ host: folderHost, pathName: '/?zip' });
-  check('zip download', r.status === 200 && r.body.slice(0, 2).toString() === 'PK' && r.body.includes(Buffer.from('readme.txt')) && !r.body.includes(Buffer.from('.env')) && !r.body.includes(Buffer.from('plan.txt')), `${r.status} ${r.headers['content-type']}`);
-  const largeBytes = 48 * 1024 * 1024;
-  const large = crypto.randomBytes(largeBytes);
-  fs.writeFileSync(path.join(dir, 'large.bin'), large);
-  const largeStarted = Date.now();
-  r = await request({ host: folderHost, pathName: '/large.bin?download' });
-  const largeSeconds = (Date.now() - largeStarted) / 1000;
-  check(`large file arrives whole (48 MB in ${largeSeconds.toFixed(1)} s)`, r.status === 200 && r.body.length === largeBytes && r.body.equals(large), `${r.status} ${r.body.length}`);
-  fs.rmSync(path.join(dir, 'large.bin'));
-  r = await request({ host: folderHost, pathName: '/?find=guide' });
-  check('search finds files in subfolders', r.status === 200 && JSON.parse(r.body.toString()).results.some(item => item.path === 'docs/guide.md'), `${r.status} ${r.body.toString().slice(0, 120)}`);
-  r = await request({ host: folderHost, pathName: '/?find=plan' });
-  check('search never reveals locked folders', r.status === 200 && JSON.parse(r.body.toString()).results.length === 0, r.body.toString().slice(0, 120));
-  r = await request({ host: folderHost, pathName: '/?zip&f=readme.txt&f=.env' });
-  check('zip of selected files', r.status === 200 && r.body.includes(Buffer.from('readme.txt')) && !r.body.includes(Buffer.from('.env')) && !r.body.includes(Buffer.from('guide.md')), `${r.status}`);
-  r = await request({ method: 'PUT', host: folderHost, pathName: '/upload.txt', body: 'nope' });
-  check('read-only folder: upload blocked at the gateway (405)', r.status === 405, `${r.status}`);
-  check('nothing written to disk', !fs.existsSync(path.join(dir, 'upload.txt')));
-  r = await request({ method: 'POST', host: folderHost, pathName: '/', headers: { Accept: 'text/html' }, body: 'x=1' });
-  check('read-only folder: browsers get a page, not JSON', r.status === 405 && r.body.toString().includes('view only'), `${r.status} ${r.body.toString().slice(0, 80)}`);
-
-  const fp = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, access: 'private', password: 'folder-pass' }, `?clientId=${clientId}`);
-  folderShare = fp.data;
-  check('make folder share private', fp.status === 200 && folderShare.access === 'private', `${fp.status} ${JSON.stringify(fp.data)}`);
-  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html' } });
-  check('private folder: visitors see the password page', r.status === 401 && r.body.toString().includes('kexoz_share_password'), `${r.status}`);
-  const unlockForm = password => ({ method: 'POST', host: folderHost, pathName: '/docs/', body: `kexoz_share_password=${password}`, headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' } });
-  r = await request(unlockForm('wrong'));
-  check('private folder: wrong password is refused', r.status === 401, `${r.status}`);
-  r = await request(unlockForm('folder-pass'));
-  const cookie = String(r.headers['set-cookie'] || '').split(';')[0];
-  check('private folder: right password goes back to the page', r.status === 303 && r.headers.location === '/docs/' && cookie.startsWith('ps_share='), `${r.status} ${r.headers.location}`);
-  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html', Cookie: cookie } });
-  check('private folder: listing opens after unlocking', r.status === 200 && r.body.toString().includes('guide.md'), `${r.status}`);
-  r = await request({ ...unlockForm('folder-pass'), headers: { ...unlockForm('').headers, Cookie: cookie } });
-  check('private folder: password form sent again (back button) returns to the folder', r.status === 303 && r.headers.location === '/docs/', `${r.status} ${r.body.toString().slice(0, 80)}`);
-
-  const fpub = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, access: 'public' }, `?clientId=${clientId}`);
-  folderShare = fpub.data;
-  check('make folder share public again', fpub.status === 200 && folderShare.access === 'public', `${fpub.status}`);
-  r = await request(unlockForm('folder-pass'));
-  check('public folder: a password page left open still lands on the folder', r.status === 303 && r.headers.location === '/docs/', `${r.status} ${r.body.toString().slice(0, 80)}`);
-  r = await request({ host: folderHost, pathName: '/docs/', headers: { Accept: 'text/html' } });
-  check('public folder: listing opens without a password', r.status === 200 && r.body.toString().includes('guide.md'), `${r.status}`);
-
-  const fw = await api('PUT', `/client/tunnels/${folderShare.id}`, { clientId, ...folderShare, permissions: 'read-write' }, `?clientId=${clientId}`);
-  folderShare = fw.data;
-  check('switch folder share to read & write', fw.status === 200 && folderShare.permissions === 'read-write', JSON.stringify(fw.data));
-  folderConn.tunnel.close();
-  server.close();
-  server = createFolderServer({ root: dir, readOnly: false, excludes: ['.git', 'node_modules', 'docs/private/'], hosts: [folderHost] });
-  folderPort = await server.listen();
-  folderConn = await connect(clientId, folderShare.id, 'folder', folderPort);
-
-  r = await request({ method: 'PUT', host: folderHost, pathName: '/uploads/new.txt', body: 'orphan' });
-  check('read & write folder: upload into a missing folder is refused', r.status === 404 && !fs.existsSync(path.join(dir, 'uploads')), `${r.status}`);
-  r = await request({ method: 'PUT', host: folderHost, pathName: '/uploads/' });
-  check('read & write folder: create folder', r.status === 201 && fs.statSync(path.join(dir, 'uploads')).isDirectory(), `${r.status} ${r.body}`);
-  r = await request({ method: 'PUT', host: folderHost, pathName: '/uploads/new.txt', body: 'uploaded!' });
-  check('read & write folder: upload works', r.status === 201 && fs.readFileSync(path.join(dir, 'uploads', 'new.txt'), 'utf8') === 'uploaded!', `${r.status} ${r.body}`);
-  r = await request({ method: 'PUT', host: folderHost, pathName: '/.env', body: 'OVERWRITE' });
-  check('read & write folder: cannot overwrite secrets', r.status >= 400 && fs.readFileSync(path.join(dir, '.env'), 'utf8') === 'SECRET=1', `${r.status}`);
-  r = await request({ method: 'DELETE', host: folderHost, pathName: '/uploads/new.txt' });
-  check('read & write folder: delete works', r.status < 300 && !fs.existsSync(path.join(dir, 'uploads', 'new.txt')), `${r.status}`);
-  r = await request({ method: 'DELETE', host: folderHost, pathName: '/docs' });
-  check('read & write folder: refuses to delete a non-empty folder', r.status >= 400 && fs.existsSync(path.join(dir, 'docs', 'guide.md')), `${r.status}`);
-
-  await new Promise(resolve => {
-    http.get({ host: '127.0.0.1', port: folderPort, path: '/readme.txt', headers: { Host: 'evil.example' } }, res => {
-      check('folder server rejects foreign Host headers (DNS rebinding)', res.statusCode === 421, `${res.statusCode}`);
-      res.resume();
-      res.on('end', resolve);
-    });
+  const frontend = await namedServer('frontend');
+  const backend = await namedServer('backend');
+  const sub = `e2e-shop-${rand()}`;
+  const host = `${sub}.${ROOT}`;
+  const created = await api('POST', '/client/tunnels', {
+    clientId, subdomain: sub, port: frontend.address().port, tunnelType: 'http', access: 'public', name: 'Shop',
+    pathRoutes: [{ path: '/api', port: backend.address().port }], projectId: project.data.projectId,
   });
+  const share = created.data;
+  check('create a routed share inside the project', created.status === 201 && share.pathRoutes?.length === 2, JSON.stringify(share));
 
-  p = await api('POST', `/client/tunnels/${folderShare.id}/pause`, { clientId });
-  r = await request({ host: folderHost, pathName: '/readme.txt' });
-  check('paused folder share refuses visitors', r.status === 503, `${r.status}`);
+  const projects = await api('GET', '/client/projects', null, `?clientId=${clientId}`);
+  const saved = projects.data.projects?.find(p => p.id === project.data.projectId);
+  check('the share belongs to the project', !!saved && saved.tunnelIds.includes(share.id), JSON.stringify(projects.data));
 
-  folderConn.tunnel.close();
-  server.close();
-  r = await request({ host: folderHost, pathName: '/readme.txt' });
-  await api('POST', `/client/tunnels/${folderShare.id}/resume`, { clientId });
-  r = await request({ host: folderHost, pathName: '/readme.txt' });
-  check('stopped folder share reports offline (502)', r.status === 502, `${r.status}`);
+  await api('PUT', `/client/tunnels/${share.id}`, { clientId, ...share, active: true }, `?clientId=${clientId}`);
+  const conn = await connect(clientId, share.id, 'http', frontend.address().port);
+  check('agent connects for the routed share', conn.connected);
 
-  const del = await api('DELETE', `/client/tunnels/${folderShare.id}`, null, `?clientId=${clientId}`);
-  check('delete folder share', del.status < 300, `${del.status}`);
-  fs.rmSync(dir, { recursive: true, force: true });
+  let r = await request({ host, pathName: '/' });
+  check('/ goes to the frontend port', r.status === 200 && r.body.toString() === 'frontend:GET:/', `${r.status} ${r.body}`);
+  r = await request({ host, pathName: '/api/orders?page=2' });
+  check('/api goes to the backend port, path unchanged', r.status === 200 && r.body.toString() === 'backend:GET:/api/orders?page=2', `${r.status} ${r.body}`);
+  r = await request({ host, pathName: '/apidocs' });
+  check('/apidocs is not mistaken for /api', r.status === 200 && r.body.toString() === 'frontend:GET:/apidocs', `${r.status} ${r.body}`);
+  r = await request({ method: 'POST', host, pathName: '/api/orders', body: '{}', headers: { 'Content-Type': 'application/json' } });
+  check('POST /api reaches the backend', r.status === 200 && r.body.toString() === 'backend:POST:/api/orders', `${r.status} ${r.body}`);
+
+  conn.tunnel.close();
+  frontend.close();
+  backend.close();
+  await api('DELETE', `/client/tunnels/${share.id}`, null, `?clientId=${clientId}`);
+  await api('DELETE', `/client/projects/${project.data.projectId}`, null, `?clientId=${clientId}`);
 
   const failed = results.filter(x => !x.ok);
   console.log(`\n${results.length - failed.length}/${results.length} passed`);
@@ -303,3 +205,4 @@ async function folderSection(clientId) {
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
+

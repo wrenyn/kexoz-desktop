@@ -18,19 +18,6 @@ type LocalRequestResult = {
   body: Uint8Array | ArrayBuffer
 }
 
-type FolderInfo = import('./lib/shares').FolderInfo
-
-type FolderServerConfig = {
-  shareId: string
-  root: string
-  readOnly: boolean
-  excludes: string[]
-  /** Public hostnames the share answers to; anything else is refused. */
-  hosts: string[]
-  /** 0 means no limit. */
-  maxDownloads?: number
-}
-
 type ListeningPort = { port: number; label: string; source: 'docker' | 'process' }
 
 type TimedCheck = { ok: boolean; ms: number; detail: string }
@@ -42,6 +29,18 @@ type DiagnosisResult = {
   ports: { port: number; open: boolean }[]
   proxy: string
 }
+
+type PageCapture = {
+  /** JPEG bytes. */
+  data: Uint8Array
+  width: number
+  height: number
+  scale: number
+  viewportW: number
+  path: string
+}
+
+type GitHubStatus = { connected: boolean; login: string; encrypted: boolean; error?: string }
 
 declare global {
   interface Window {
@@ -56,14 +55,13 @@ declare global {
       setTunnelPort?: (key: string, port: number) => Promise<boolean>
       updateTray?: (tunnels: import('./lib/api').PersistentTunnel[]) => Promise<boolean>
       setAutoStart?: (enabled: boolean) => Promise<boolean>
-      pickFolder?: () => Promise<FolderInfo | null>
-      inspectFolder?: (folder: string) => Promise<FolderInfo>
-      startFolderServer?: (config: FolderServerConfig) => Promise<{ port: number }>
-      stopFolderServer?: (shareId: string) => Promise<boolean>
       listListeningPorts?: () => Promise<ListeningPort[]>
       diagnose?: (config: { apiBase: string; ports: number[] }) => Promise<DiagnosisResult>
-      folderDownloads?: () => Promise<Record<string, number>>
-      onFolderDownload?: (callback: (shareId: string, count: number) => void) => () => void
+      capturePage?: (payload: { port: number; path: string; width: number; routes?: { path: string; port: number }[] }) => Promise<PageCapture>
+      githubStatus?: () => Promise<GitHubStatus>
+      githubConnect?: (token: string) => Promise<GitHubStatus>
+      githubDisconnect?: () => Promise<boolean>
+      githubRequest?: <T = unknown>(payload: { method: 'GET' | 'POST' | 'PATCH'; path: string; body?: unknown }) => Promise<T>
       onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState, reason?: string) => void) => () => void
       onLogEntry: (callback: (key: string, entry: import('./lib/api').RequestLogEntry) => void) => () => void
     }

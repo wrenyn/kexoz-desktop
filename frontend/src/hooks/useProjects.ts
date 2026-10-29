@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createProject, deleteProject, listProjects, setTunnelProject, updateProject, type Project } from '../lib/api'
+import {
+  createEnvironment, createProject, deleteProject, listProjects, setTunnelProject, updateProject, type PersistentTunnel, type Project,
+} from '../lib/api'
 
 /** Projects for the signed-in client. Actions throw so callers can show the error. */
 export function useProjects(clientId: string | undefined) {
@@ -41,7 +43,15 @@ export function useProjects(clientId: string | undefined) {
     setProjects(await setTunnelProject(clientId, tunnelId, projectId))
   }, [clientId])
 
-  return { projects, loaded, refresh, create, save, remove, move }
+  /** Copies an environment's shares into a new one and resolves to the copies. */
+  const addEnvironment = useCallback(async (projectId: string, name: string, from: string): Promise<PersistentTunnel[]> => {
+    if (!clientId) return []
+    const result = await createEnvironment(clientId, projectId, name, from)
+    if (result.projects.length > 0) setProjects(result.projects)
+    return result.tunnels
+  }, [clientId])
+
+  return { projects, loaded, refresh, create, save, remove, move, addEnvironment }
 }
 
 export type ProjectsApi = ReturnType<typeof useProjects>

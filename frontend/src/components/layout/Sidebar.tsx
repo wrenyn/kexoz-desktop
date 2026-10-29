@@ -10,11 +10,12 @@ type Props = {
   liveShares: number
   shareCount: number
   requestCount: number
+  reviewCount: number
   onLogin: () => void
   verifying: boolean
 }
 
-export default function Sidebar({ activePage, onNavigate, onNewShare, session, liveShares, shareCount, requestCount, onLogin, verifying }: Props) {
+export default function Sidebar({ activePage, onNavigate, onNewShare, session, liveShares, shareCount, requestCount, reviewCount, onLogin, verifying }: Props) {
   const tier = tierOf(session)
   const limit = SHARE_LIMITS[tier]
   const pct = Math.min(100, (shareCount / limit) * 100)
@@ -23,6 +24,7 @@ export default function Sidebar({ activePage, onNavigate, onNewShare, session, l
 
   const badgeFor = (id: Page) => {
     if (id === 'tunnels' && liveShares > 0) return <span className="ps-nav-badge ps-nav-badge-live">{liveShares} live</span>
+    if (id === 'review' && reviewCount > 0) return <span className="ps-nav-badge" title={`${reviewCount} open feedback`}>{reviewCount > 99 ? '99+' : reviewCount}</span>
     if (id === 'requests' && requestCount > 0) return <span className="ps-nav-badge">{requestCount > 999 ? '999+' : requestCount}</span>
     return null
   }

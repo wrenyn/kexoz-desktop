@@ -1,22 +1,22 @@
-// Measures how fast a large folder-share download crosses the tunnel when the
-// link has latency. Run with: node scripts/tunnel-throughput.js [megabytes] [rttMs]
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+// Measures how fast a large download crosses the tunnel when the link has
+// latency. Run with: node scripts/tunnel-throughput.js [megabytes] [rttMs]
+const http = require('node:http');
 const { WebSocketServer, createWebSocketStream } = require('ws');
 const { Client } = require('yamux-js');
 const { connectTunnel } = require(process.env.TUNNEL_MODULE || '../src/tunnel');
-const { createFolderServer } = require('../src/fileServer');
 
 const megabytes = Number(process.argv[2] || 64);
 const rtt = Number(process.argv[3] || 100);
 const HOST = 'speed.example.test';
 
 async function main() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kexoz-speed-'));
-  fs.writeFileSync(path.join(root, 'big.bin'), Buffer.alloc(megabytes * 1024 * 1024, 7));
-  const files = createFolderServer({ root, hosts: [HOST] });
-  const filePort = await files.listen();
+  const payload = Buffer.alloc(megabytes * 1024 * 1024, 7);
+  const files = http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': payload.length });
+    res.end(payload);
+  });
+  await new Promise(resolve => files.listen(0, '127.0.0.1', resolve));
+  const filePort = files.address().port;
 
   const gateway = new WebSocketServer({ port: 0 });
   await new Promise(resolve => gateway.once('listening', resolve));
@@ -53,7 +53,9 @@ async function main() {
       if (received >= megabytes * 1024 * 1024) resolve();
     });
     stream.on('error', reject);
-    stream.write(`GET /big.bin?download HTTP/1.1\r\nHost: ${HOST}\r\nConnection: close\r\n\r\n`);
+    // Port header 0: the share's own port.
+    stream.write(Buffer.from([0, 0]));
+    stream.write(`GET /big.bin HTTP/1.1\r\nHost: ${HOST}\r\nConnection: close\r\n\r\n`);
   });
   clearInterval(sampler);
   const seconds = (Date.now() - started) / 1000;
@@ -63,7 +65,6 @@ async function main() {
   client.close();
   gateway.close();
   files.close();
-  fs.rmSync(root, { recursive: true, force: true });
   process.exit(0);
 }
 

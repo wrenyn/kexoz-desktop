@@ -8,7 +8,6 @@ type CreateTunnelArgs = {
   portRef: React.MutableRefObject<number | null>
   onStateChange: (state: ConnectionState, message?: string) => void
   onLogEntry: (entry: RequestLogEntry) => void
-  routesRef: React.MutableRefObject<Array<{ path: string; port: number }>>
 }
 
 /** Dev-server chatter that inflates request counts without real payload. */

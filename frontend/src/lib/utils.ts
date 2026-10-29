@@ -13,7 +13,7 @@ export const extractError = (err: unknown): string => {
     const msg = err.response?.data?.message
     if (typeof msg === 'string' && msg.trim()) return msg.charAt(0).toUpperCase() + msg.slice(1)
   }
-  if (err instanceof Error && err.message.trim()) return err.message
+  if (err instanceof Error && err.message.trim()) return err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
   return 'Something went wrong while contacting the server.'
 }
 

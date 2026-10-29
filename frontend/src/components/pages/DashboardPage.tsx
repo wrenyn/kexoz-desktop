@@ -82,7 +82,7 @@ export default function DashboardPage({
             <div className="ps-overview-card-head">
               <div>
                 <div className="ps-overview-card-title">Share your first app</div>
-                <div className="ps-overview-card-sub">Pick a port, terminal or folder on this computer and get a link anyone can open.</div>
+                <div className="ps-overview-card-sub">Create a project, pick the ports your app runs on and get a link anyone can open.</div>
               </div>
               <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New share</button>
             </div>

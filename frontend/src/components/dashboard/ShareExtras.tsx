@@ -76,15 +76,16 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete }: {
+export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpenReview }: {
   tunnel: PersistentTunnel
   notes: PreviewNote[]
   busyId: string | null
   onStatus: (note: PreviewNote, status: PreviewNote['status']) => void
   onDelete: (note: PreviewNote) => void
+  onOpenReview?: () => void
 }) {
   const [showResolved, setShowResolved] = useState(false)
-  const open = notes.filter(note => note.status === 'open')
+  const open = notes.filter(note => note.status !== 'resolved')
   const resolved = notes.length - open.length
   const visible = showResolved ? notes : open
   const colors = useMemo(() => noteColors(notes), [notes])
@@ -102,14 +103,19 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete }: {
                 : 'Turn on interactive preview to collect notes.'
               : open.length > 0
                 ? `${open.length} open ${open.length === 1 ? 'note' : 'notes'}`
-                : 'Every note is resolved.'}
+                : 'Every note is fixed.'}
           </p>
         </div>
-        {resolved > 0 && (
-          <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setShowResolved(v => !v)}>
-            {showResolved ? 'Hide resolved' : `Show resolved (${resolved})`}
-          </button>
-        )}
+        <div className="ps-feedback-actions">
+          {resolved > 0 && (
+            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setShowResolved(v => !v)}>
+              {showResolved ? 'Hide fixed' : `Show fixed (${resolved})`}
+            </button>
+          )}
+          {onOpenReview && (
+            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onOpenReview}>Open review</button>
+          )}
+        </div>
       </div>
 
       {visible.length > 0 && (
@@ -124,10 +130,12 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete }: {
                   {note.authorRole === 'owner' && <span className="ps-note-owner">Owner</span>}
                   · {timeAgo(note.createdAt)} ·{' '}
                   <a href={pageUrl(note.path)} target="_blank" rel="noreferrer" className="ps-share-note-path">{note.path || '/'}</a>
+                  {note.status === 'in_progress' && <span className="ps-badge ps-badge-blue">In progress</span>}
+                  {(note.replies?.length ?? 0) > 0 && <span className="ps-share-note-replies">{note.replies!.length} {note.replies!.length === 1 ? 'reply' : 'replies'}</span>}
                 </span>
                 <div className="ps-feedback-actions">
-                  {note.status === 'open' ? (
-                    <button className="ps-btn ps-btn-secondary ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'resolved')}>Resolve</button>
+                  {note.status !== 'resolved' ? (
+                    <button className="ps-btn ps-btn-secondary ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'resolved')}>Mark fixed</button>
                   ) : (
                     <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'open')}>Reopen</button>
                   )}

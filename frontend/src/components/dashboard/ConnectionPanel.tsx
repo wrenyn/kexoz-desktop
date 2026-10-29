@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { API_BASE_URL, type PersistentTunnel } from '../../lib/api'
-import { shareUrl } from '../../lib/shares'
+import { extraRoutes, shareUrl } from '../../lib/shares'
 import { shareHealth, type ConnectionEvent } from '../../hooks/useConnectionHistory'
 
 type Props = {
@@ -45,7 +45,7 @@ export default function ConnectionPanel({ tunnels, events }: Props) {
     setRunning(true)
     setChecks(null)
     try {
-      const ports = [...new Set(live.filter(t => t.tunnelType !== 'folder').map(t => t.port))]
+      const ports = [...new Set(live.flatMap(t => [t.port, ...extraRoutes(t).map(route => route.port)]))]
       if (!window.kexoz?.diagnose) {
         const start = Date.now()
         const ok = await fetch(`${API_BASE_URL}/health/live`).then(res => res.ok).catch(() => false)

@@ -35,7 +35,7 @@ export default function GateScreen({ onLogin, onSkip, verifying, theme }: GateSc
         <p className="animate-gate-line-2 ps-gate-text">
           {verifying
             ? 'Finish signing in with Google in your browser. This window updates on its own.'
-            : 'Share apps, terminals and folders from this computer with a link.'}
+            : 'Share the app you’re building with a link, get feedback, and share the fix.'}
         </p>
 
         <div className="animate-gate-line-3 ps-gate-actions">

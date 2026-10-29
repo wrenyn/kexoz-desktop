@@ -132,7 +132,7 @@ export default function DomainsPage({
     .filter(tunnel => tunnel.subdomain === name)
     .sort((a, b) => Number(b.active && !b.paused) - Number(a.active && !a.paused))
   const describe = (share: PersistentTunnel) =>
-    share.name?.trim() || (share.tunnelType === 'folder' ? 'a folder share' : `localhost:${share.port}`)
+    share.name?.trim() || `localhost:${share.port}`
 
   const copyLink = (host: string) => {
     void navigator.clipboard.writeText(`https://${host}`).then(() => {

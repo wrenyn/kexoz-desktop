@@ -13,10 +13,10 @@ export default function TunnelsPage(props: Props) {
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
-          <h1 className="ps-page-title">Shares</h1>
+          <h1 className="ps-page-title">All shares</h1>
           <p className="ps-page-subtitle">
             {persistentTunnels.length === 0
-              ? 'Ports, terminals and folders you share'
+              ? 'Every share across your projects'
               : `${persistentTunnels.length} ${persistentTunnels.length === 1 ? 'share' : 'shares'}${running > 0 ? ` · ${running} running` : ''}`}
           </p>
         </div>
@@ -27,7 +27,7 @@ export default function TunnelsPage(props: Props) {
           <div className="ps-card">
             <div className="ps-empty">
               <span className="ps-empty-title">Nothing shared yet</span>
-              <span className="ps-empty-sub">Share a local port, terminal or folder through a link.</span>
+              <span className="ps-empty-sub">Create a project, then share your frontend, backend or both on one link.</span>
               <button type="button" className="ps-btn ps-btn-primary" onClick={onNewTunnel} style={{ marginTop: 8 }}>
                 New share
               </button>

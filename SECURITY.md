@@ -22,8 +22,8 @@ in the release notes unless you ask us not to.
 
 - Authentication or authorization bypass on tunnels, the admin API, or billing
   endpoints.
-- Remote code execution, command injection, or sandbox escape through the
-  browser terminal (`pty`) or the SSH/TCP transports.
+- Remote code execution or command injection through the agent, path routing
+  (reaching a local port the share doesn't route to), or the SSH/TCP transports.
 - Cross-site request or WebSocket hijacking of an authenticated session.
 - Leakage of client IDs, API tokens, session cookies, or tunnel contents.
 - Rate-limit, bandwidth-quota, or abuse-control bypasses.

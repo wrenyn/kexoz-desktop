@@ -2,7 +2,7 @@
   "name": "kexoz",
   "productName": "Kexoz",
   "version": "1.4.5",
-  "description": "Kexoz desktop - share your local apps, terminals and files securely",
+  "description": "Kexoz desktop - share a local app, get feedback, fix it and share the update",
   "main": "src/main.js",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
     "make": "npm --prefix ../frontend run build && electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint .",
-    "test": "node --test src/fileServer.test.js",
+    "test": "node --test src/tunnel.test.js src/review.test.js",
     "e2e": "node scripts/e2e-shares.js"
   },
   "keywords": [],

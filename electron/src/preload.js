@@ -11,18 +11,13 @@ contextBridge.exposeInMainWorld('kexoz', {
   setTunnelPort: (key, port) => ipcRenderer.invoke('kexoz:set-tunnel-port', key, port),
   updateTray: (tunnels) => ipcRenderer.invoke('kexoz:update-tray', tunnels),
   setAutoStart: (enabled) => ipcRenderer.invoke('kexoz:set-autostart', enabled),
-  pickFolder: () => ipcRenderer.invoke('kexoz:pick-folder'),
-  inspectFolder: (folder) => ipcRenderer.invoke('kexoz:inspect-folder', folder),
-  startFolderServer: (config) => ipcRenderer.invoke('kexoz:start-folder-server', config),
-  stopFolderServer: (shareId) => ipcRenderer.invoke('kexoz:stop-folder-server', shareId),
   listListeningPorts: () => ipcRenderer.invoke('kexoz:list-listening-ports'),
-  folderDownloads: () => ipcRenderer.invoke('kexoz:folder-downloads'),
-  onFolderDownload: (callback) => {
-    const handler = (_event, shareId, count) => callback(shareId, count);
-    ipcRenderer.on('kexoz:folder-download', handler);
-    return () => ipcRenderer.removeListener('kexoz:folder-download', handler);
-  },
   diagnose: (config) => ipcRenderer.invoke('kexoz:diagnose', config),
+  capturePage: (payload) => ipcRenderer.invoke('kexoz:capture-page', payload),
+  githubStatus: () => ipcRenderer.invoke('kexoz:github-status'),
+  githubConnect: (token) => ipcRenderer.invoke('kexoz:github-connect', token),
+  githubDisconnect: () => ipcRenderer.invoke('kexoz:github-disconnect'),
+  githubRequest: (payload) => ipcRenderer.invoke('kexoz:github-request', payload),
   onTunnelState: (callback) => {
     const handler = (_event, key, state, reason) => callback(key, state, reason);
     ipcRenderer.on('kexoz:tunnel-state', handler);

@@ -1,13 +1,12 @@
-const { app, BrowserWindow, shell, protocol, net, ipcMain, Tray, Menu, nativeImage, Notification, dialog, powerMonitor } = require('electron');
+const { app, BrowserWindow, shell, protocol, net, ipcMain, Tray, Menu, nativeImage, Notification, clipboard, powerMonitor } = require('electron');
 const http = require('node:http');
 const nodeNet = require('node:net');
 const dns = require('node:dns');
 const { execFile } = require('node:child_process');
-const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { connectTunnel } = require('./tunnel');
-const { createFolderServer, describeFolder } = require('./fileServer');
+const { registerReviewHandlers } = require('./review');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -219,14 +218,13 @@ async function dockerPorts() {
 
 ipcMain.handle('kexoz:list-listening-ports', async () => {
   const [processes, containers] = await Promise.all([listeningProcesses(), dockerPorts()]);
-  const own = new Set([...folderServers.values()].map(server => server.port).filter(Boolean));
   const ports = new Map();
   for (const item of containers) {
-    if (own.has(item.port) || ports.has(item.port)) continue;
+    if (ports.has(item.port)) continue;
     ports.set(item.port, { port: item.port, label: `${item.container} (Docker, port ${item.inner})`, source: 'docker' });
   }
   for (const [port, name] of processes) {
-    if (own.has(port) || ports.has(port)) continue;
+    if (ports.has(port)) continue;
     ports.set(port, { port, label: name || 'Unknown app', source: 'process' });
   }
   return [...ports.values()].sort((a, b) => a.port - b.port).slice(0, 40);
@@ -278,80 +276,11 @@ ipcMain.handle('kexoz:diagnose', async (_event, config) => {
   };
 });
 
+registerReviewHandlers();
+
 ipcMain.handle('kexoz:notify', async (_event, { title, body }) => {
   if (!Notification.isSupported()) return false;
   new Notification({ title: String(title || 'Kexoz'), body: String(body || '') }).show();
-  return true;
-});
-
-ipcMain.handle('kexoz:pick-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose a folder to share',
-    properties: ['openDirectory'],
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-  return describeFolder(result.filePaths[0], os.homedir());
-});
-
-ipcMain.handle('kexoz:inspect-folder', async (_event, folder) => {
-  if (typeof folder !== 'string' || !path.isAbsolute(folder)) throw new Error('Folder path must be absolute');
-  return describeFolder(folder, os.homedir());
-});
-
-// One loopback file server per running folder share, keyed by share id.
-const folderServers = new Map();
-
-// Download counts survive restarts so a limit can't be reset by restarting the share.
-const downloadsFile = () => path.join(app.getPath('userData'), 'folder-downloads.json');
-let downloadCounts = null;
-const loadDownloadCounts = () => {
-  if (downloadCounts) return downloadCounts;
-  try {
-    downloadCounts = JSON.parse(require('node:fs').readFileSync(downloadsFile(), 'utf8')) || {};
-  } catch {
-    downloadCounts = {};
-  }
-  return downloadCounts;
-};
-let saveTimer = null;
-const saveDownloadCounts = () => {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    require('node:fs').promises.writeFile(downloadsFile(), JSON.stringify(downloadCounts || {})).catch(() => {});
-  }, 500);
-};
-
-ipcMain.handle('kexoz:folder-downloads', async () => ({ ...loadDownloadCounts() }));
-
-ipcMain.handle('kexoz:start-folder-server', async (_event, config) => {
-  const shareId = String(config?.shareId || '');
-  const root = config?.root;
-  if (!shareId || typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('A share id and an absolute folder path are required');
-  folderServers.get(shareId)?.close();
-  folderServers.delete(shareId);
-  const counts = loadDownloadCounts();
-  const server = createFolderServer({
-    root,
-    readOnly: config.readOnly !== false,
-    excludes: Array.isArray(config.excludes) ? config.excludes.map(String) : undefined,
-    hosts: Array.isArray(config.hosts) ? config.hosts.map(String) : [],
-    maxDownloads: Number(config.maxDownloads) || 0,
-    downloadsUsed: counts[shareId] || 0,
-    onDownload: (count) => {
-      counts[shareId] = count;
-      saveDownloadCounts();
-      sendToWindow('kexoz:folder-download', shareId, count);
-    },
-  });
-  const port = await server.listen();
-  folderServers.set(shareId, server);
-  return { port };
-});
-
-ipcMain.handle('kexoz:stop-folder-server', async (_event, shareId) => {
-  folderServers.get(String(shareId))?.close();
-  folderServers.delete(String(shareId));
   return true;
 });
 
@@ -386,25 +315,24 @@ ipcMain.handle('kexoz:set-tunnel-port', async (_event, key, port) => {
   return true;
 });
 
-ipcMain.handle('kexoz:update-tray', async (event, tunnels) => {
+ipcMain.handle('kexoz:update-tray', async (_event, shares) => {
   if (!tray) return false;
   const menuItems = [];
   menuItems.push({ label: 'Show Kexoz', click: () => { mainWindow?.show(); mainWindow?.focus(); } });
   menuItems.push({ label: 'Hide Kexoz', click: () => mainWindow?.hide() });
-  
-  if (tunnels && tunnels.length > 0) {
+
+  if (Array.isArray(shares) && shares.length > 0) {
     menuItems.push({ type: 'separator' });
     menuItems.push({ label: 'Shares', enabled: false });
-    tunnels.forEach(t => {
-      const isRunning = activeTunnel && currentConfig && currentConfig.port === t.port;
+    shares.forEach(t => {
       const name = typeof t.name === 'string' ? t.name.trim().slice(0, 60) : '';
+      const label = name ? `${name} (${t.subdomain})` : `${t.subdomain} (:${t.port})`;
       menuItems.push({
-        label: name ? `${name} (${t.subdomain})` : `${t.subdomain} (:${t.port})`,
-        icon: isRunning ? nativeImage.createFromPath(path.join(__dirname, '../assets/green-dot.png')) : undefined,
+        label: tunnels.has(t.id) ? `● ${label}` : label,
         submenu: [
-          { label: 'Copy URL', click: () => { 
-            const domain = t.customDomain ? t.customDomain : `${t.subdomain}.kexoz.dev`; 
-            require('electron').clipboard.writeText(`https://${domain}`); 
+          { label: 'Copy URL', click: () => {
+            const domain = t.customDomain ? t.customDomain : `${t.subdomain}.kexoz.dev`;
+            clipboard.writeText(`https://${domain}`);
           }},
         ]
       });
@@ -539,8 +467,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-  folderServers.forEach(server => server.close());
-  folderServers.clear();
   tunnels.forEach(tunnel => tunnel.close());
   tunnels.clear();
 });

@@ -71,7 +71,7 @@ export default function ProjectEditor({ tunnels, projects, initial, onCancel, on
                     {shareLabel(tunnel)}
                     <span className="ps-project-pick-meta">
                       {' · '}{TYPE_LABELS[tunnel.tunnelType ?? 'http']}
-                      {tunnel.tunnelType !== 'folder' ? ` · localhost:${tunnel.port}` : ''}
+                      {` · localhost:${tunnel.port}`}
                       {elsewhere ? ` · in ${elsewhere.name}` : ''}
                     </span>
                   </span>

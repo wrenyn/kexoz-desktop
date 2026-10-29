@@ -1,39 +1,25 @@
-import type { PersistentTunnel, ShareAccess, SharePermissions, ShareStatus, TunnelType } from './api'
+import type { PathRoute, PersistentTunnel, ShareAccess, SharePermissions, ShareStatus, TunnelType } from './api'
 import { ROOT_DOMAIN } from './api'
-
-export type FolderInfo = {
-  path: string
-  exists: boolean
-  isDirectory: boolean
-  isDriveRoot: boolean
-  isHome: boolean
-}
-
-/** Folder shares keep their path on this device; the server never sees it. */
-export type FolderShareConfig = {
-  root: string
-  excludes: string[]
-  /** Downloads allowed before the share refuses more; 0 or missing means no limit. */
-  maxDownloads?: number
-}
 
 export type NewShareRequest = {
   subdomain: string
   tunnelType: TunnelType
-  /** Local port for port and terminal shares; ignored for folders. */
   port: number
   access: ShareAccess
   permissions: SharePermissions
   password?: string
   duration?: string
-  folder?: FolderShareConfig
   preview?: boolean
   name?: string
-  /** The project the share is created in, if any. */
+  /** Paths other than / that go to another local port, like /api → 8080. */
+  extraRoutes?: PathRoute[]
+  /** The project the share is created in. */
   projectId?: string
+  /** Creates this project first when no existing one was picked. */
+  newProjectName?: string
+  /** Preview environment inside the project; empty is main. */
+  environment?: string
 }
-
-export const DEFAULT_FOLDER_EXCLUDES = ['.git', 'node_modules']
 
 export const EXPIRY_OPTIONS = [
   { id: '1h', label: '1 hour', duration: '1h' },
@@ -47,9 +33,11 @@ export const TYPE_LABELS: Record<TunnelType, string> = {
   e2e: 'Web · end-to-end encrypted',
   tcp: 'TCP',
   udp: 'UDP',
-  pty: 'Terminal',
-  folder: 'Folder',
 }
+
+/** Share types the app can still run; older folder and terminal shares are ignored. */
+export const isSupportedType = (type: string | undefined): boolean =>
+  !type || type in TYPE_LABELS
 
 /** The gateway can only check visitors on types where it sees the requests. */
 export const isGatedType = (type: TunnelType | undefined): boolean =>
@@ -80,16 +68,67 @@ export const addressHolder = (tunnels: PersistentTunnel[], tunnel: PersistentTun
 
 export const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/
 
+const ENVIRONMENT_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/
+
+/** The stored environment name: "main" and blank both mean the project's main one. */
+export const environmentName = (raw: string): string => {
+  const name = raw.trim().toLowerCase()
+  return name === 'main' || name === 'default' ? '' : name
+}
+
+export const environmentLabel = (name?: string): string => name || 'main'
+
+export const environmentError = (raw: string): string => {
+  const name = environmentName(raw)
+  return name === '' || ENVIRONMENT_PATTERN.test(name) ? '' : 'Use up to 24 lowercase letters, numbers or dashes, like staging or pr-12.'
+}
+
 export const projectNameError = (name: string): string =>
   !name.trim() ? 'Give the project a name.'
     : !PROJECT_NAME_PATTERN.test(name.trim().replace(/\s+/g, ' ')) ? 'Use up to 40 letters, numbers, spaces, dashes or underscores.'
     : ''
 
+/** Routes other than the / fallback, which always follows the share's port. */
+export const extraRoutes = (tunnel: PersistentTunnel): PathRoute[] =>
+  (tunnel.pathRoutes ?? []).filter(route => route.path.replace(/\/+$/, '') !== '')
+
+/** Why a route row can't be saved, or '' when it can. */
+/** The local port that serves a request path: the longest matching route, else the share's port. */
+export const portForPath = (tunnel: PersistentTunnel, requestPath: string): number => {
+  const path = requestPath.split('?')[0]
+  const route = [...(tunnel.pathRoutes ?? [])]
+    .filter(r => r.path !== '/' && (path === r.path || path.startsWith(`${r.path.replace(/\/$/, '')}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+  return route?.port ?? tunnel.port
+}
+
+export const routeError = (route: PathRoute, others: PathRoute[]): string => {
+  const path = route.path.trim().replace(/\/+$/, '')
+  if (!path.startsWith('/') || path.length < 2) return 'Start the path with /, like /api.'
+  if (/[?#*\s]/.test(path)) return 'Use a plain path prefix, like /api.'
+  if (!Number.isInteger(route.port) || route.port < 1 || route.port > 65535) return 'Use a port between 1 and 65535.'
+  const clash = others.find(other => {
+    const otherPath = other.path.trim().replace(/\/+$/, '')
+    return otherPath === path || otherPath.startsWith(`${path}/`) || path.startsWith(`${otherPath}/`)
+  })
+  return clash ? `Overlaps ${clash.path}.` : ''
+}
+
+/** The routes to save for a share: valid extra routes plus the / fallback. */
+export const routesForShare = (port: number, extras: PathRoute[]): PathRoute[] => {
+  const kept: PathRoute[] = []
+  for (const route of extras) {
+    const clean = { path: route.path.trim().replace(/\/+$/, ''), port: route.port }
+    if (!routeError(clean, kept)) kept.push(clean)
+  }
+  return [...kept, { path: '/', port }]
+}
+
 /** Falls back to the same rule the server uses for records from older servers. */
 export const shareAccess = (tunnel: PersistentTunnel): ShareAccess => {
   if (tunnel.access) return tunnel.access
   if (!isGatedType(tunnel.tunnelType)) return 'public'
-  return tunnel.requireAuth || tunnel.password || tunnel.tunnelType === 'pty' ? 'private' : 'public'
+  return tunnel.requireAuth || tunnel.password ? 'private' : 'public'
 }
 
 export const shareStatus = (tunnel: PersistentTunnel): ShareStatus => {
@@ -104,6 +143,3 @@ export const STATUS_BADGES: Record<ShareStatus, { label: string; className: stri
   paused: { label: 'Paused', className: 'ps-badge-yellow' },
   expired: { label: 'Expired', className: 'ps-badge-red' },
 }
-
-export const parseExcludes = (text: string): string[] =>
-  text.split(/[\n,]/).map(pattern => pattern.trim()).filter(Boolean)
