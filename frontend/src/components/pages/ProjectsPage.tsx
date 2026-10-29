@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { PersistentTunnel, Project } from '../../lib/api'
-import { environmentError, environmentLabel, environmentName, shareLabel, shareStatus } from '../../lib/shares'
+import { environmentError, environmentLabel, environmentName, shareAddress, shareLabel, shareStatus } from '../../lib/shares'
 import ProjectEditor from '../projects/ProjectEditor'
 import ShareList, { type ShareControls } from '../shares/ShareList'
 import { useCopy } from '../../hooks/useCopy'
@@ -84,6 +84,19 @@ function summarize(project: Project, byId: Map<string, PersistentTunnel>) {
   return { shares, running: live.length, startable, meta }
 }
 
+function ProjectStatus({ running, total }: { running: number; total: number }) {
+  if (total === 0) return <span className="ps-project-status">Not set up</span>
+  if (running === 0) return <span className="ps-project-status">Stopped</span>
+  return (
+    <span className="ps-project-status running">
+      <span className="ps-share-dot active" aria-hidden="true" />
+      {running === total ? 'Running' : `${running} of ${total} running`}
+    </span>
+  )
+}
+
+const PREVIEW_SHARES = 4
+
 /** The project limited to one environment's shares, so start and stop leave the others alone. */
 function inEnvironment(project: Project, byId: Map<string, PersistentTunnel>, environment: string): Project {
   const ids = project.tunnelIds.filter(id => (byId.get(id)?.environment ?? '') === environment)
@@ -148,44 +161,48 @@ export default function ProjectsPage(props: Props) {
     const environments = [...new Set(['', ...all.map(tunnel => tunnel.environment ?? '')])].sort()
     const env = environments.includes(envTab) ? envTab : ''
     const scoped = inEnvironment(project, byId, env)
-    const { shares, running, startable, meta } = summarize(scoped, byId)
+    const { shares, running, startable } = summarize(scoped, byId)
     const command = startCommand(project.name, env)
     return (
       <div className="ps-main">
         <div className="ps-page-header animate-fade-down">
           <div className="ps-page-heading">
             <button type="button" className="ps-page-crumb" onClick={() => openProject(null)}>Projects</button>
-            <h1 className="ps-page-title">{project.name}</h1>
+            <div className="ps-project-title-row">
+              <h1 className="ps-page-title">{project.name}</h1>
+              <ProjectStatus running={running} total={shares.length} />
+            </div>
             <p className="ps-page-subtitle">
-              {meta}
-              {shares.length > 0 && (
-                <>
-                  {' · '}
-                  <button type="button" className="ps-group-command" onClick={() => void copy('command', command)} title="Copy the command that starts this project">
-                    {copied === 'command' ? 'Copied' : command}
-                  </button>
-                  {' · '}
-                  <button
-                    type="button"
-                    className="ps-group-command"
-                    onClick={() => void copy('file', projectFile(project.name, env))}
-                    title="Save this as kexoz.json in your code folder, then run kexoz start there"
-                  >
-                    {copied === 'file' ? 'Copied kexoz.json' : 'Copy kexoz.json'}
-                  </button>
-                </>
-              )}
+              {shares.length === 0 ? 'No shares yet' : `${shares.length} ${shares.length === 1 ? 'share' : 'shares'}`}
+              {env ? ` in ${env}` : ''}
             </p>
           </div>
           <div className="ps-header-actions">
-            {runButtons(scoped, running, startable)}
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onOpenInbox(project)}>Inbox</button>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)} disabled={editing}>Edit</button>
             <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => onNewShare(project.id, false, env)}>Add share</button>
+            {runButtons(scoped, running, startable)}
           </div>
         </div>
 
         <div className="ps-page-content ps-groups animate-fade-up">
+          {shares.length > 0 && (
+            <div className="ps-project-cli">
+              <span className="ps-project-cli-label">From a terminal</span>
+              <code className="ps-project-cli-command">{command}</code>
+              <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copy('command', command)}>
+                {copied === 'command' ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                className="ps-btn ps-btn-ghost ps-btn-sm"
+                onClick={() => void copy('file', projectFile(project.name, env))}
+                title="Save this as kexoz.json in your code folder, then run kexoz start there"
+              >
+                {copied === 'file' ? 'Copied' : 'Copy kexoz.json'}
+              </button>
+            </div>
+          )}
           {all.length > 0 && (
             <div className="ps-env-bar">
               {environments.length > 1 && (
@@ -238,9 +255,7 @@ export default function ProjectsPage(props: Props) {
             />
           )}
           {shares.length > 0 ? (
-            <div className="ps-card ps-group">
-              <ShareList {...props} tunnels={shares} />
-            </div>
+            <ShareList {...props} tunnels={shares} projects={projects} onMoveShare={onMoveShare} />
           ) : !editing && (
             <div className="ps-card">
               <div className="ps-empty ps-empty-setup">
@@ -258,18 +273,22 @@ export default function ProjectsPage(props: Props) {
     )
   }
 
+  const liveCount = persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length
+  const overview = projects.length === 0
+    ? 'Each project is one app: its frontend, backend and anything else you share, started with one click.'
+    : [
+        `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`,
+        `${persistentTunnels.length} ${persistentTunnels.length === 1 ? 'share' : 'shares'}`,
+        liveCount > 0 ? `${liveCount} running` : 'nothing running',
+      ].join(' · ')
+
   return (
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Projects</h1>
-          <p className="ps-page-subtitle">Each project is one app: its frontend, backend and anything else you share, started with one click</p>
+          <p className="ps-page-subtitle">{overview}</p>
         </div>
-        {projects.length > 0 && (
-          <div className="ps-header-actions">
-            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => setCreating(true)} disabled={creating}>New project</button>
-          </div>
-        )}
       </div>
 
       <div className="ps-page-content ps-groups animate-fade-up">
@@ -287,38 +306,55 @@ export default function ProjectsPage(props: Props) {
         )}
 
         {projects.length > 0 ? (
-          <div className="ps-card ps-group">
-            <ul className="ps-share-list">
-              {projects.map(item => {
-                const { shares, running, meta } = summarize(item, byId)
-                const main = inEnvironment(item, byId, '')
-                const mainSummary = summarize(main, byId)
-                const otherEnvironments = new Set(shares.map(tunnel => tunnel.environment ?? '').filter(Boolean)).size
-                const names = [
-                  mainSummary.shares.map(shareLabel).join(', '),
-                  otherEnvironments > 0 ? `${otherEnvironments} more ${otherEnvironments === 1 ? 'environment' : 'environments'}` : '',
-                ].filter(Boolean).join(' · ')
-                return (
-                  <li key={item.id} className="ps-share-row">
-                    <button type="button" className="ps-share-row-main" onClick={() => openProject(item.id)} aria-label={`Open ${item.name}`}>
-                      <span className={`ps-share-dot ${running > 0 ? 'active' : ''}`} aria-hidden="true" />
-                      <span className="ps-share-row-text">
-                        <span className="ps-share-row-name">
-                          {item.name}
-                          <span className={`ps-share-row-status ${running > 0 ? 'active' : ''}`}>{meta}</span>
-                        </span>
-                        {names && <span className="ps-share-row-sub">{names}</span>}
-                      </span>
-                    </button>
-                    <div className="ps-share-row-actions">
+          <div className="ps-project-grid">
+            {projects.map(item => {
+              const { shares, running } = summarize(item, byId)
+              const main = inEnvironment(item, byId, '')
+              const mainSummary = summarize(main, byId)
+              const otherEnvironments = new Set(shares.map(tunnel => tunnel.environment ?? '').filter(Boolean)).size
+              const hidden = mainSummary.shares.length - PREVIEW_SHARES
+              const meta = [
+                shares.length === 0 ? '' : `${shares.length} ${shares.length === 1 ? 'share' : 'shares'}`,
+                otherEnvironments > 0 ? `${otherEnvironments + 1} environments` : '',
+              ].filter(Boolean).join(' · ')
+              return (
+                <article key={item.id} className={`ps-project-card ${running > 0 ? 'running' : ''}`}>
+                  <button type="button" className="ps-project-card-open" onClick={() => openProject(item.id)} aria-label={`Open ${item.name}`} />
+                  <div className="ps-project-card-head">
+                    <h2 className="ps-project-card-name">{item.name}</h2>
+                    <ProjectStatus running={running} total={shares.length} />
+                  </div>
+                  {mainSummary.shares.length > 0 ? (
+                    <ul className="ps-project-card-shares">
+                      {mainSummary.shares.slice(0, PREVIEW_SHARES).map(tunnel => (
+                        <li key={tunnel.id}>
+                          <span className={`ps-share-dot ${shareStatus(tunnel)}`} aria-hidden="true" />
+                          <span className="ps-project-card-share-name">{shareLabel(tunnel)}</span>
+                          {tunnel.name?.trim() && <span className="ps-project-card-share-address">{shareAddress(tunnel)}</span>}
+                        </li>
+                      ))}
+                      {hidden > 0 && <li className="ps-project-card-more">{hidden} more</li>}
+                    </ul>
+                  ) : (
+                    <p className="ps-project-card-empty">Add your frontend, backend or anything else to start them together.</p>
+                  )}
+                  <div className="ps-project-card-foot">
+                    <span className="ps-project-card-meta">{meta}</span>
+                    <div className="ps-project-card-actions">
                       {shares.length === 0
-                        ? <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => openProject(item.id)}>Set up</button>
+                        ? <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => openProject(item.id)}>Set up</button>
                         : runButtons(main, mainSummary.running, mainSummary.startable)}
                     </div>
-                  </li>
-                )
-              })}
-            </ul>
+                  </div>
+                </article>
+              )
+            })}
+            {!creating && (
+              <button type="button" className="ps-project-card ps-project-card-new" onClick={() => setCreating(true)}>
+                <span className="ps-project-card-new-title">New project</span>
+                <span className="ps-project-card-new-sub">Group the frontend, backend and anything else one app needs.</span>
+              </button>
+            )}
           </div>
         ) : projectsLoaded && !creating && (
           <div className="ps-card">
@@ -335,39 +371,18 @@ export default function ProjectsPage(props: Props) {
           </div>
         )}
 
-        {loose.length > 0 && projects.length > 0 && (
-          <div className="ps-card ps-group">
-            <div className="ps-group-head">
-              <div className="ps-group-title">
-                <span className="ps-group-name">Not in a project</span>
-                <span className="ps-group-meta">Move these into a project so they start with the rest of the app.</span>
-              </div>
+        {loose.length > 0 && (
+          <section className="ps-project-section">
+            <div className="ps-project-section-head">
+              <h2 className="ps-project-section-title">Not in a project</h2>
+              <p className="ps-project-section-hint">
+                {projects.length > 0
+                  ? 'Open a share to move it into a project, so it starts with the rest of the app.'
+                  : 'Create a project to start these together with one click.'}
+              </p>
             </div>
-            <ul className="ps-share-list">
-              {loose.map(tunnel => (
-                <li key={tunnel.id} className="ps-share-row">
-                  <div className="ps-share-row-main">
-                    <span className={`ps-share-dot ${shareStatus(tunnel)}`} aria-hidden="true" />
-                    <span className="ps-share-row-text">
-                      <span className="ps-share-row-name">{shareLabel(tunnel)}</span>
-                      <span className="ps-share-row-sub">localhost:{tunnel.port}</span>
-                    </span>
-                  </div>
-                  <div className="ps-share-row-actions">
-                    <select
-                      className="ps-input ps-move-select"
-                      value=""
-                      aria-label={`Move ${shareLabel(tunnel)} to a project`}
-                      onChange={event => { if (event.target.value) onMoveShare(tunnel, event.target.value) }}
-                    >
-                      <option value="">Move to…</option>
-                      {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+            <ShareList {...props} tunnels={loose} projects={projects} onMoveShare={onMoveShare} />
+          </section>
         )}
       </div>
     </div>

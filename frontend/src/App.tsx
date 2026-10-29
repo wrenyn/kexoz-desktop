@@ -35,7 +35,6 @@ import LoadingScreen from './components/screens/LoadingScreen'
 import GateScreen from './components/screens/GateScreen'
 import SubdomainScreen from './components/screens/SubdomainScreen'
 import DashboardPage from './components/pages/DashboardPage'
-import TunnelsPage from './components/pages/TunnelsPage'
 import ProjectsPage from './components/pages/ProjectsPage'
 import type { ShareControls } from './components/shares/ShareList'
 import RequestsPage from './components/pages/RequestsPage'
@@ -780,7 +779,7 @@ export default function App() {
     try {
       await projectsApi.move(tunnel.id, projectId)
       const project = projectsApi.projects.find(item => item.id === projectId)
-      toast.success(project ? `Moved ${shareLabel(tunnel)} to ${project.name}` : `Moved ${shareLabel(tunnel)}`)
+      toast.success(project ? `Moved ${shareLabel(tunnel)} to ${project.name}` : projectId ? `Moved ${shareLabel(tunnel)}` : `${shareLabel(tunnel)} is no longer in a project`)
     } catch (err) {
       toast.error(extractError(err))
     }
@@ -789,7 +788,7 @@ export default function App() {
   const removeProject = async (project: Project): Promise<boolean> => {
     const accepted = await confirm({
       title: `Delete ${project.name}?`,
-      message: <>Its shares aren’t deleted and stay on the All shares page. <code>kexoz start {project.name}</code> stops working.</>,
+      message: <>Its shares aren’t deleted; they move to Not in a project. <code>kexoz start {project.name}</code> stops working.</>,
       confirmLabel: 'Delete project',
       tone: 'danger',
     })
@@ -1075,12 +1074,8 @@ export default function App() {
                 connectionEvents={connectionEvents}
                 onNewShare={() => openNewShare()}
                 onViewRequests={() => setActivePage('requests')}
-                onViewShares={() => setActivePage('tunnels')}
+                onViewShares={() => { setOpenProjectId(null); setActivePage('projects') }}
               />
-            )}
-
-            {activePage === 'tunnels' && (
-              <TunnelsPage {...shareControls(session.id)} onNewTunnel={() => openNewShare()} />
             )}
 
             {activePage === 'projects' && (

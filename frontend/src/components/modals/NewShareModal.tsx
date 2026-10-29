@@ -93,6 +93,15 @@ function ToggleRow({ title, desc, checked, onChange }: { title: string; desc: st
   )
 }
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="ps-ns-section">
+      <h3 className="ps-ns-section-title">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
 function Field({ label, htmlFor, aside, help, error, children }: {
   label: string
   htmlFor?: string
@@ -257,7 +266,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
       label="Project"
       htmlFor="new-share-project"
       error={show(projectError)}
-      help={creatingProject ? 'Shares in a project start and stop together, like a frontend and its API.' : undefined}
+      help={creatingProject ? 'Shares in a project start and stop together.' : undefined}
     >
       <div className="ps-ns-project">
         {projects.length > 0 && (
@@ -297,11 +306,10 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
             maxLength={40}
             onChange={e => setProjectName(e.target.value)}
             onKeyDown={onEnter}
-            placeholder="Project name, like my-app"
+            placeholder="Like my-app"
             aria-label="New project name"
             aria-invalid={attempted && Boolean(projectError)}
-            autoFocus
-            style={{ flex: 1, minWidth: 0 }}
+            autoFocus={projects.length > 0}
           />
         )}
       </div>
@@ -315,7 +323,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
       error={show(portError)}
       help={routing && isWeb ? 'Every path you don’t route below goes here.' : undefined}
     >
-      <div className="ps-input-group">
+      <div className="ps-input-group ps-ns-port-input">
         <span className="ps-input-prefix">localhost:</span>
         <input
           id="new-share-port"
@@ -326,7 +334,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
           placeholder="3000"
           min={1}
           max={65535}
-          autoFocus={!creatingProject}
+          autoFocus={!creatingProject || projects.length === 0}
           onKeyDown={onEnter}
           aria-invalid={attempted && Boolean(portError)}
         />
@@ -371,8 +379,8 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
     <div className="ps-ns-field">
       <div className="ps-ns-toggles">
         <ToggleRow
-          title="Serve frontend and backend on one link"
-          desc="Send paths like /api to another port on this computer. Everything else goes to the port above."
+          title="Frontend and backend on one link"
+          desc="Send paths like /api to another port. Everything else goes to the port above."
           checked={routing}
           onChange={toggleRouting}
         />
@@ -387,14 +395,10 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   )
 
   const accessFields = isWeb && (
-    <Field
-      label="Who can open it"
-      help={effectiveAccess === 'public' ? 'Anyone with the link can open it.' : undefined}
-      error={needsPassword ? show(passwordError) : undefined}
-    >
+    <div className="ps-ns-field">
       <Segmented
         label="Who can open it"
-        options={[{ id: 'private', label: 'Only people with the password' }, { id: 'public', label: 'Anyone with the link' }]}
+        options={[{ id: 'private', label: 'Password' }, { id: 'public', label: 'Anyone with the link' }]}
         value={access}
         onChange={setAccess}
       />
@@ -417,7 +421,10 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
           </button>
         </div>
       )}
-    </Field>
+      {needsPassword && show(passwordError)
+        ? <p className="ps-ns-error" role="alert">{passwordError}</p>
+        : <p className="field-help">{needsPassword ? 'Visitors type it once, then the share opens.' : 'Anyone who has the link can open it.'}</p>}
+    </div>
   )
 
   const expiryField = (
@@ -453,12 +460,12 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
 
   const addressField = (
     <Field
-      label="Link"
+      label="Address"
       htmlFor="new-share-address"
       aside={<button type="button" className="ps-ns-link" onClick={onManageAddresses}>Manage addresses</button>}
       error={addresses.length > 0 ? show(addressError) : undefined}
       help={sharedWith.length > 0
-        ? `${sharedWith.join(', ')} ${sharedWith.length === 1 ? 'uses' : 'use'} this address too. Only one share runs on it at a time, so starting this one pauses whichever is running. To serve a frontend and backend on one link, route paths instead.`
+        ? `${sharedWith.join(', ')} ${sharedWith.length === 1 ? 'uses' : 'use'} this address too. Only one runs at a time, so starting this pauses the other.`
         : undefined}
     >
       {addresses.length > 0 ? (
@@ -487,7 +494,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   )
 
   const nameField = (
-    <Field label="Name" htmlFor="new-share-name" help="Optional. Shown in your project instead of the address.">
+    <Field label="Name" htmlFor="new-share-name" aside={<span className="ps-ns-optional">Optional</span>}>
       <input
         id="new-share-name"
         className="ps-input"
@@ -495,12 +502,14 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
         maxLength={60}
         onChange={e => setName(e.target.value)}
         onKeyDown={onEnter}
-        placeholder={routing && isWeb ? 'Like Web app' : detectedLabel ? `Like ${detectedLabel}` : 'Like Frontend or Backend'}
+        placeholder={routing && isWeb ? 'Like Web app' : detectedLabel ? `Like ${detectedLabel}` : 'Like Frontend'}
       />
     </Field>
   )
 
   const projectLabel = creatingProject ? trimmedProjectName : projects.find(item => item.id === project)?.name
+  const previewLink = needsAddress ? (address ? `${address}.${ROOT_DOMAIN}` : 'Pick an address') : `A public ${protocol === 'udp' ? 'UDP' : 'TCP'} port`
+  const previewTarget = Number.isInteger(portNumber) && portNumber > 0 ? `localhost:${portNumber}` : 'localhost:port'
 
   return (
     <div className="ps-modal-overlay" onClick={onClose}>
@@ -516,67 +525,83 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
         <div className="ps-ns-header">
           <div>
             <h2 className="ps-modal-title" id="new-share-title">New share</h2>
-            {projectLabel && <p className="ps-ns-context">Adds to <strong>{projectLabel}</strong></p>}
+            <p className="ps-ns-context">
+              {projectLabel ? <>Adds to <strong>{projectLabel}</strong></> : 'Put something on this computer online with a link.'}
+            </p>
           </div>
-          <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose}>Close</button>
         </div>
 
         <div className="ps-ns-body">
-          {projectField}
-          {portField}
-          <Field
-            label="Kind of traffic"
-            help={protocol === 'web' ? undefined : 'You get a public address and port. Anyone who has it can connect, so keep your own login on the service.'}
-          >
+          <Section title="Your app">
             <Segmented
               label="Kind of traffic"
               options={PROTOCOLS}
               value={protocol}
               onChange={next => { setProtocol(next); setEndToEnd(false) }}
             />
-          </Field>
-          {protocol === 'tcp' && (
-            <div className="ps-ns-toggles">
-              <ToggleRow
-                title="End-to-end encryption"
-                desc="For services that speak TLS. Traffic passes through to your service untouched and gets a link instead of a port."
-                checked={endToEnd}
-                onChange={setEndToEnd}
-              />
+            {portField}
+            {protocol !== 'web' && (
+              <p className="field-help ps-ns-note">You get a public address and port. Anyone who has it can connect, so keep your service’s own login on.</p>
+            )}
+            {protocol === 'tcp' && (
+              <div className="ps-ns-toggles">
+                <ToggleRow
+                  title="End-to-end encryption"
+                  desc="For services that speak TLS. You get a link instead of a port, and traffic reaches your service untouched."
+                  checked={endToEnd}
+                  onChange={setEndToEnd}
+                />
+              </div>
+            )}
+            {routingFields}
+          </Section>
+
+          <Section title={needsAddress ? 'Link' : 'Details'}>
+            {needsAddress && addressField}
+            <div className="ps-ns-grid">
+              {nameField}
+              {projectField}
             </div>
-          )}
-          {routingFields}
-          {needsAddress && addressField}
-          {nameField}
-          {accessFields}
+          </Section>
+
           {isWeb && (
-            <div className="ps-ns-toggles">
-              <ToggleRow
-                title="Visual review"
-                desc="Visitors enter their name once, then pin notes anywhere on the page. You resolve them here or on the page."
-                checked={preview}
-                onChange={setPreview}
-              />
-            </div>
+            <Section title="Who can open it">
+              {accessFields}
+              <div className="ps-ns-toggles">
+                <ToggleRow
+                  title="Visual review"
+                  desc="Visitors pin notes anywhere on the page. You resolve them here or on the page."
+                  checked={preview}
+                  onChange={setPreview}
+                />
+              </div>
+            </Section>
           )}
 
-          <button
-            type="button"
-            className="ps-ns-more"
-            aria-expanded={moreOpen}
-            onClick={() => setMoreOpen(v => !v)}
-          >
-            {moreOpen ? 'Fewer options' : 'More options'}
-          </button>
-
-          {moreOpen && (
-            <div className="ps-ns-more-body">
-              {expiryField}
-            </div>
-          )}
+          <div className="ps-ns-more-wrap">
+            <button
+              type="button"
+              className="ps-ns-more"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen(v => !v)}
+            >
+              {moreOpen ? 'Fewer options' : 'More options'}
+            </button>
+            {moreOpen && (
+              <div className="ps-ns-more-body">
+                {expiryField}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="ps-ns-footer">
+          <div className="ps-ns-summary" aria-live="polite">
+            <span className="ps-ns-summary-link">{previewLink}</span>
+            <span className="ps-ns-summary-arrow" aria-hidden="true">→</span>
+            <span className="ps-ns-summary-target">{previewTarget}</span>
+          </div>
+          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose}>Cancel</button>
           <button
             type="button"
             className="ps-btn ps-btn-primary"
