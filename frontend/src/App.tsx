@@ -12,7 +12,7 @@ import {
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, fetchClientStats,
-  googleLinkLoginUrl, fetchLinkStatus,
+  googleLinkLoginUrl, fetchLinkStatus, startGoogleLink,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
   addDomain, removeDomain, type PathRoute
 } from './lib/api'
@@ -108,6 +108,7 @@ export default function App() {
   const [connState, setConnState] = useState<ConnectionState>('idle')
   const [gauthEnabled, setGauthEnabled] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [signInCode, setSignInCode] = useState<string | null>(null)
   const [showNewTunnel, setShowNewTunnel] = useState(false)
   const [newShareProject, setNewShareProject] = useState<string | undefined>(undefined)
   /** Opens the new share window with path routing already shown. */
@@ -439,8 +440,19 @@ export default function App() {
     const attempt = ++verifyAttempt.current
     setVerifying(true)
     toast.dismiss()
-    toast.loading('Finish signing in with Google in your browser', { id: 'google-signin', duration: 8000 })
-    window.open(googleLinkLoginUrl(session.id), '_blank', 'noopener')
+    let loginUrl = googleLinkLoginUrl(session.id)
+    let code = ''
+    try {
+      const started = await startGoogleLink(session.id)
+      loginUrl = googleLinkLoginUrl(session.id, started.link)
+      code = started.code
+    } catch {
+      // Servers without link-start still accept the plain link.
+    }
+    if (verifyAttempt.current !== attempt) return
+    setSignInCode(code || null)
+    toast.loading(code ? `Finish signing in with Google in your browser. Your code is ${code}.` : 'Finish signing in with Google in your browser', { id: 'google-signin', duration: Infinity })
+    window.open(loginUrl, '_blank', 'noopener')
     const deadline = Date.now() + 5 * 60 * 1000
     try {
       for (;;) {
@@ -453,6 +465,14 @@ export default function App() {
         try {
           const status = await fetchLinkStatus(session.id)
           if (verifyAttempt.current !== attempt) return
+          if (status.switchTo) {
+            tunnelConnections.current.forEach(connection => connection.close())
+            tunnelConnections.current.clear()
+            setClientId(status.switchTo)
+            void bootstrapClient()
+            toast.success(`Signed in as ${status.email}.`, { id: 'google-signin' })
+            return
+          }
           if (status.linked) {
             const fresh = await ensureClientIdentity(session.id)
             if (verifyAttempt.current !== attempt) return
@@ -470,9 +490,12 @@ export default function App() {
         }
       }
     } finally {
-      if (verifyAttempt.current === attempt) setVerifying(false)
+      if (verifyAttempt.current === attempt) {
+        setVerifying(false)
+        setSignInCode(null)
+      }
     }
-  }, [session, verifying, gauthEnabled])
+  }, [session, verifying, gauthEnabled, bootstrapClient])
 
   const skipGate = useCallback(() => {
     verifyAttempt.current += 1
@@ -1024,6 +1047,7 @@ export default function App() {
             onLogin={() => void startGoogleVerify()}
             onSkip={skipGate}
             verifying={verifying}
+            code={signInCode}
             theme={theme}
           />
         )}

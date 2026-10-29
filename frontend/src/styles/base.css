@@ -921,6 +921,17 @@ a.ps-btn { text-decoration: none; }
   margin-bottom: 24px;
   max-width: 290px;
 }
+.ps-gate-code {
+  margin: -12px 0 22px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
 .ps-gate-actions {
   display: flex;
   flex-direction: column;

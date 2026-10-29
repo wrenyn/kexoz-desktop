@@ -4,6 +4,7 @@ type GateScreenProps = {
   onLogin: () => void
   onSkip: () => void
   verifying: boolean
+  code?: string | null
   theme: 'light' | 'dark'
 }
 
@@ -16,7 +17,7 @@ const GoogleMark = () => (
   </svg>
 )
 
-export default function GateScreen({ onLogin, onSkip, verifying, theme }: GateScreenProps) {
+export default function GateScreen({ onLogin, onSkip, verifying, code, theme }: GateScreenProps) {
   return (
     <div className="ps-splash">
       <div aria-hidden="true" style={{
@@ -37,6 +38,7 @@ export default function GateScreen({ onLogin, onSkip, verifying, theme }: GateSc
             ? 'Finish signing in with Google in your browser. This window updates on its own.'
             : 'Share the app you’re building with a link, get feedback, and share the fix.'}
         </p>
+        {verifying && code && <div className="ps-gate-code" aria-label="Sign-in code">{code}</div>}
 
         <div className="animate-gate-line-3 ps-gate-actions">
           <button type="button" className="ps-gate-google" onClick={onLogin} disabled={verifying}>

@@ -171,14 +171,23 @@ export type LinkStatus = {
   tier: Tier
   bandwidthUsed: number
   bandwidthLimit: number
+  /** Set when the Google account already had an identity; this install should use it. */
+  switchTo?: string
 }
 
 const toBase64Url = (value: string): string =>
   btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
+/** Starts a sign-in; the code is shown here and on the browser's confirm page. */
+export const startGoogleLink = async (clientId: string): Promise<{ link: string; code: string }> => {
+  const { data } = await axios.post<{ link: string; code: string }>(`${API_BASE_URL}/client/link-start`, { clientId })
+  return data
+}
+
 /** Browser URL that starts Google sign-in and lands on link-finish for clientId. */
-export const googleLinkLoginUrl = (clientId: string): string => {
-  const finish = `${API_BASE_URL}/client/link-finish?clientId=${encodeURIComponent(clientId)}`
+export const googleLinkLoginUrl = (clientId: string, link?: string): string => {
+  let finish = `${API_BASE_URL}/client/link-finish?clientId=${encodeURIComponent(clientId)}`
+  if (link) finish += `&link=${encodeURIComponent(link)}`
   return `${API_BASE_URL}/auth/google/login?next=${encodeURIComponent(toBase64Url(finish))}`
 }
 
