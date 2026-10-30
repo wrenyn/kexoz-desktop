@@ -1,27 +1,17 @@
-import { type FormEvent } from 'react'
-import type { ClientSession } from '../../lib/api'
-import { ROOT_DOMAIN } from '../../lib/api'
-import ThemeToggle from '../ui/ThemeToggle'
+import { useEffect, useState, type FormEvent } from 'react'
+import { ROOT_DOMAIN, checkSubdomainAvailability } from '../../lib/api'
 import Logo from '../ui/Logo'
-import { Copy, Check, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
-import { useState, useEffect } from 'react'
-import { toast } from 'react-hot-toast'
-import { checkSubdomainAvailability } from '../../lib/api'
 
 type SubdomainScreenProps = {
-  session: ClientSession
   subdomainInput: string
   setSubdomainInput: (v: string) => void
   onSubmit: (e: FormEvent<HTMLFormElement>) => void
   isBusy: boolean
-  theme: 'light' | 'dark'
-  onToggleTheme: () => void
 }
 
 export default function SubdomainScreen({
-  session, subdomainInput, setSubdomainInput, onSubmit, isBusy, theme, onToggleTheme
+  subdomainInput, setSubdomainInput, onSubmit, isBusy
 }: SubdomainScreenProps) {
-  const [copied, setCopied] = useState(false)
   const [isChecking, setIsChecking] = useState(false)
   const [availability, setAvailability] = useState<'idle' | 'available' | 'taken' | 'reserved'>('idle')
 
@@ -47,40 +37,15 @@ export default function SubdomainScreen({
     return () => clearTimeout(timer)
   }, [subdomainInput])
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(session.id)
-      setCopied(true)
-      toast.success('Client ID copied')
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      toast.error('Failed to copy')
-    }
-  }
-
-  // Availability indicator
   const AvailabilityBadge = () => {
-    if (isChecking) return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11.5, color: 'var(--text-soft)' }}>
-        <Loader2 size={11} style={{ animation: 'spin 0.8s linear infinite' }} /> Checking…
-      </span>
-    )
-    if (availability === 'available') return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11.5, color: 'var(--green)', fontWeight: 600 }}>
-        <CheckCircle2 size={11} /> Available
-      </span>
-    )
-    if (availability === 'taken') return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11.5, color: 'var(--red)', fontWeight: 600 }}>
-        <XCircle size={11} /> Already taken
-      </span>
-    )
-    if (availability === 'reserved') return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11.5, color: 'var(--yellow)', fontWeight: 600 }}>
-        <XCircle size={11} /> Reserved name
-      </span>
-    )
-    return null
+    const status =
+      isChecking ? { text: 'Checking…', color: 'var(--text-soft)' } :
+      availability === 'available' ? { text: 'Available', color: 'var(--green)' } :
+      availability === 'taken' ? { text: 'Taken', color: 'var(--red)' } :
+      availability === 'reserved' ? { text: 'Not available', color: 'var(--red)' } :
+      null
+    if (!status) return null
+    return <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: status.color }}>{status.text}</span>
   }
 
   const inputBorderColor =
@@ -100,99 +65,23 @@ export default function SubdomainScreen({
           </div>
           <div className="ps-brand-name">Kexoz</div>
         </div>
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} compact />
       </div>
 
       {/* Body */}
       <div className="ps-onboard-body">
         <div className="ps-onboard-card animate-gate-card" style={{ maxWidth: 460 }}>
 
-          {/* Progress step */}
-          <div className="animate-gate-line-1" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            {/* Step 1 — active */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%', background: 'var(--accent)',
-                color: 'var(--text-on-accent)', fontSize: 11, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>1</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-strong)' }}>Claim subdomain</span>
-            </div>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            {/* Step 2 — pending */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)', color: 'var(--text-soft)', fontSize: 11, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>2</span>
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-soft)' }}>Forward a port</span>
-            </div>
-          </div>
-
-          {/* Title */}
           <h1 className="animate-gate-line-2" style={{ marginBottom: 6 }}>
-            Choose your public URL
+            Pick your first address
           </h1>
-          <p className="ps-onboard-text animate-gate-line-2" style={{ marginBottom: 12 }}>
-            This becomes your permanent address on the internet.
+          <p className="ps-onboard-text animate-gate-line-2" style={{ marginBottom: 20 }}>
+            People open your shares here. You can add more addresses later.
           </p>
-          <div className="animate-gate-line-2" style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 9,
-            padding: '10px 12px',
-            borderRadius: 8,
-            background: 'rgba(251, 191, 36, 0.08)',
-            border: '1px solid rgba(251, 191, 36, 0.28)',
-            marginBottom: 18,
-          }}>
-            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>⚠️</span>
-            <p style={{ fontSize: 11.5, color: 'var(--yellow)', margin: 0, lineHeight: 1.55, fontWeight: 500 }}>
-              <strong>This subdomain is permanent.</strong> Once claimed, it cannot be changed, deleted, or transferred. Choose carefully.
-            </p>
-          </div>
 
-          {/* Client ID row */}
-          <div className="animate-gate-line-3" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '7px 10px',
-            borderRadius: 8,
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            marginBottom: 20,
-          }}>
-            <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-soft)', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
-              Device ID
-            </span>
-            <span style={{ fontFamily: 'var(--mono-font)', fontSize: 11, color: 'var(--text-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {session.id}
-            </span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="ps-btn-icon"
-              title="Copy Device ID"
-              style={{
-                padding: 5,
-                color: copied ? 'var(--green)' : 'var(--text-soft)',
-                border: 'none',
-                background: 'none',
-                transition: 'color 0.2s ease',
-                flexShrink: 0,
-              }}
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-            </button>
-          </div>
-
-          {/* Form */}
           <form className="ps-onboard-form animate-gate-line-4" onSubmit={onSubmit}>
             <div className="ps-input-wrap">
               <label className="ps-label" htmlFor="subdomain" style={{ display: 'flex', alignItems: 'center' }}>
-                Subdomain
+                Address
                 <AvailabilityBadge />
               </label>
               <div
@@ -218,7 +107,7 @@ export default function SubdomainScreen({
               </div>
               {subdomainInput.length > 0 && subdomainInput.length < 3 && (
                 <p style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: 2 }}>
-                  At least 3 characters required
+                  Use at least 3 characters
                 </p>
               )}
             </div>
@@ -229,20 +118,9 @@ export default function SubdomainScreen({
               disabled={!canSubmit}
               style={{ borderRadius: 10, transition: 'all 0.2s ease' }}
             >
-              {isBusy ? (
-                <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Claiming…</>
-              ) : (
-                'Claim this subdomain →'
-              )}
+              {isBusy ? 'Saving…' : 'Continue'}
             </button>
           </form>
-
-          {/* Hint text */}
-          <p className="animate-gate-line-5" style={{ fontSize: 11.5, color: 'var(--text-soft)', marginTop: 16, lineHeight: 1.5, textAlign: 'center' }}>
-            Your tunnel will be live at <span style={{ fontFamily: 'var(--mono-font)', color: 'var(--text-muted)' }}>
-              {subdomainInput ? `${subdomainInput}.${ROOT_DOMAIN}` : `<subdomain>.${ROOT_DOMAIN}`}
-            </span>
-          </p>
         </div>
       </div>
     </div>

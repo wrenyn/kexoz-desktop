@@ -11,9 +11,9 @@ export const normalizeSubdomain = (v: string) =>
 export const extractError = (err: unknown): string => {
   if (axios.isAxiosError(err)) {
     const msg = err.response?.data?.message
-    if (typeof msg === 'string' && msg.trim()) return msg
+    if (typeof msg === 'string' && msg.trim()) return msg.charAt(0).toUpperCase() + msg.slice(1)
   }
-  if (err instanceof Error && err.message.trim()) return err.message
+  if (err instanceof Error && err.message.trim()) return err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
   return 'Something went wrong while contacting the server.'
 }
 
@@ -26,6 +26,13 @@ export const toBase64 = (bytes: Uint8Array): string => {
 export const fromBase64 = (v: string): Uint8Array => {
   const bin = atob(v)
   return Uint8Array.from(bin, c => c.charCodeAt(0))
+}
+
+export const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 export const formatTime = (iso: string) => {

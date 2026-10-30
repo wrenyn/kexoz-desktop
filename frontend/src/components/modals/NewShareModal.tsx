@@ -1,113 +1,204 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { AlertTriangle, FolderOpen } from 'lucide-react'
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { QUICK_PORTS } from '../../lib/storage'
-import { ROOT_DOMAIN, type ShareAccess, type SharePermissions, type Tier, type TunnelType } from '../../lib/api'
-import { DEFAULT_FOLDER_EXCLUDES, EXPIRY_OPTIONS, isGatedType, parseExcludes, type FolderInfo, type NewShareRequest } from '../../lib/shares'
+import { ROOT_DOMAIN, type PathRoute, type Project, type ShareAccess, type TunnelType } from '../../lib/api'
+import { EXPIRY_OPTIONS, environmentLabel, projectNameError, routeError, type NewShareRequest } from '../../lib/shares'
 import { usePortScanner } from '../../hooks/usePortScanner'
+import RouteRulesEditor from '../dashboard/RouteRulesEditor'
+
+const MIN_PASSWORD = 4
+const NEW_PROJECT = '__new'
+
+export type AddressOption = {
+  name: string
+  /** Labels of the shares already on this address. */
+  usedBy: string[]
+}
 
 type Props = {
   onClose: () => void
-  tier: Tier
+  addresses: AddressOption[]
+  projects: Project[]
+  /** The project picked when the window opens. */
+  projectId?: string
+  /** Show path routing straight away, for one link that serves the whole app. */
+  routed?: boolean
+  /** Environments each project already has ("" is main). */
+  environments?: Record<string, string[]>
+  /** The environment picked when the window opens. */
+  environment?: string
+  onManageAddresses: () => void
   onSubmit: (request: NewShareRequest) => void | Promise<void>
 }
 
-type Tab = 'port' | 'terminal' | 'folder'
 type Protocol = 'web' | 'tcp' | 'udp'
-type ExpiryId = typeof EXPIRY_OPTIONS[number]['id']
+type ExpiryId = typeof EXPIRY_OPTIONS[number]['id'] | 'custom'
+type ExpiryUnit = 'm' | 'h' | 'd'
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'port', label: 'Port' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'folder', label: 'Folder' },
+const EXPIRY_CHOICES: { id: ExpiryId; label: string }[] = [
+  { id: 'never', label: 'Never' },
+  ...EXPIRY_OPTIONS.filter(option => option.id !== 'never').map(option => ({ id: option.id, label: option.label })),
+  { id: 'custom', label: 'Custom' },
 ]
 
-const PROTOCOLS: { id: Protocol; label: string; desc: string }[] = [
-  { id: 'web', label: 'Web', desc: 'HTTP, HTTPS, WebSocket' },
-  { id: 'tcp', label: 'TCP', desc: 'Databases, SSH, games' },
-  { id: 'udp', label: 'UDP', desc: 'Datagram services' },
+const EXPIRY_UNITS: { id: ExpiryUnit; label: string; minutes: number }[] = [
+  { id: 'm', label: 'Minutes', minutes: 1 },
+  { id: 'h', label: 'Hours', minutes: 60 },
+  { id: 'd', label: 'Days', minutes: 60 * 24 },
 ]
 
-const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/
+const MAX_EXPIRY_MINUTES = 365 * 24 * 60
 
-function randomSubdomain(): string {
-  const adjectives = ['blue', 'fast', 'quick', 'neat', 'cool', 'tiny', 'smart', 'wavy', 'wild', 'happy']
-  const nouns = ['fox', 'bear', 'wolf', 'cat', 'owl', 'duck', 'frog', 'lion', 'bird', 'fish']
-  const pick = (list: string[]) => list[Math.floor(Math.random() * list.length)]
-  return `${pick(adjectives)}-${pick(nouns)}-${Math.floor(Math.random() * 1000)}`
-}
+const PROTOCOLS: { id: Protocol; label: string }[] = [
+  { id: 'web', label: 'Website or API' },
+  { id: 'tcp', label: 'TCP' },
+  { id: 'udp', label: 'UDP' },
+]
 
-function Choice({ selected, title, desc, onClick, disabled }: { selected: boolean; title: string; desc: string; onClick: () => void; disabled?: boolean }) {
+function Segmented<T extends string>({ label, options, value, onChange }: {
+  label: string
+  options: { id: T; label: string }[]
+  value: T
+  onChange: (value: T) => void
+}) {
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      disabled={disabled}
-      className={`ps-btn ps-choice ${selected ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-      onClick={onClick}
-    >
-      <span className="ps-choice-title">{title}</span>
-      <span className="ps-choice-desc">{desc}</span>
-    </button>
+    <div className="ps-segmented" role="radiogroup" aria-label={label}>
+      {options.map(option => (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={value === option.id}
+          className={`ps-segmented-item ${value === option.id ? 'active' : ''}`}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
-export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
-  const [tab, setTab] = useState<Tab>('port')
-  const [subdomain, setSubdomain] = useState(randomSubdomain)
+function ToggleRow({ title, desc, checked, onChange }: { title: string; desc: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="ps-ns-toggle-row">
+      <span className="ps-ns-toggle-text">
+        <span className="ps-ns-toggle-title">{title}</span>
+        <span className="ps-ns-toggle-desc">{desc}</span>
+      </span>
+      <span className="ps-toggle">
+        <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+        <span className="ps-toggle-track" />
+      </span>
+    </label>
+  )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="ps-ns-section">
+      <h3 className="ps-ns-section-title">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function Field({ label, htmlFor, aside, help, error, children }: {
+  label: string
+  htmlFor?: string
+  aside?: ReactNode
+  help?: ReactNode
+  error?: string
+  children: ReactNode
+}) {
+  return (
+    <div className="ps-ns-field">
+      <div className="ps-ns-field-head">
+        {htmlFor ? <label className="ps-label" htmlFor={htmlFor}>{label}</label> : <span className="ps-label">{label}</span>}
+        {aside}
+      </div>
+      {children}
+      {error ? <p className="ps-ns-error" role="alert">{error}</p> : help ? <p className="field-help">{help}</p> : null}
+    </div>
+  )
+}
+
+export default function NewShareModal({ onClose, onSubmit, addresses, projects, projectId, routed = false, environments = {}, environment = '', onManageAddresses }: Props) {
+  const initialProject = projects.find(project => project.id === projectId)?.id ?? projects[0]?.id ?? NEW_PROJECT
+  const [project, setProject] = useState(initialProject)
+  const [envChoice, setEnvChoice] = useState(environment)
+  const [projectName, setProjectName] = useState('')
+  const [address, setAddress] = useState((addresses.find(option => option.usedBy.length === 0) ?? addresses[0])?.name ?? '')
+  const [name, setName] = useState('')
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<Protocol>('web')
   const [endToEnd, setEndToEnd] = useState(false)
-  const [chosenAccess, setChosenAccess] = useState<ShareAccess>('private')
-  const [readOnly, setReadOnly] = useState(false)
-  const [folder, setFolder] = useState<FolderInfo | null>(null)
-  const [folderWritable, setFolderWritable] = useState(false)
-  const [excludesText, setExcludesText] = useState(DEFAULT_FOLDER_EXCLUDES.join('\n'))
-  const [broadConfirmed, setBroadConfirmed] = useState(false)
+  const [routing, setRouting] = useState(routed)
+  const [routes, setRoutes] = useState<PathRoute[]>(routed ? [{ path: '/api', port: 8080 }] : [])
+  const [access, setAccess] = useState<ShareAccess>('private')
+  const [preview, setPreview] = useState(false)
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [expiry, setExpiry] = useState<ExpiryId>('never')
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [customAmount, setCustomAmount] = useState('30')
+  const [customUnit, setCustomUnit] = useState<ExpiryUnit>('m')
+  const [moreOpen, setMoreOpen] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [pickError, setPickError] = useState('')
   const modalRef = useRef<HTMLDivElement>(null)
-  const detectedPorts = usePortScanner(tab !== 'folder')
+  const detectedPorts = usePortScanner(true)
 
   const tunnelType: TunnelType =
-    tab === 'folder' ? 'folder' :
-    tab === 'terminal' ? 'pty' :
     protocol === 'udp' ? 'udp' :
-    endToEnd ? 'e2e' :
-    protocol === 'tcp' ? 'tcp' :
+    protocol === 'tcp' ? (endToEnd ? 'e2e' : 'tcp') :
     'http'
 
-  const gated = isGatedType(tunnelType)
-  const access: ShareAccess = tunnelType === 'pty' ? 'private' : gated ? chosenAccess : 'public'
-  const permissions: SharePermissions =
-    tunnelType === 'folder' ? (folderWritable ? 'read-write' : 'read') :
-    (tunnelType === 'http' || tunnelType === 'pty') && readOnly ? 'read' :
-    'read-write'
-  const broadFolder = Boolean(folder && (folder.isDriveRoot || folder.isHome))
-  const needsPassword = access === 'private' && tier === 'anonymous' && tunnelType !== 'pty'
+  const isWeb = tunnelType === 'http'
+  const needsAddress = tunnelType !== 'tcp' && tunnelType !== 'udp'
+  const effectiveAccess: ShareAccess = isWeb ? access : 'public'
+  const needsPassword = isWeb && effectiveAccess === 'private'
+  const creatingProject = project === NEW_PROJECT
+  const projectEnvironments = creatingProject ? [] : environments[project] ?? []
+  const chosenEnvironment = projectEnvironments.includes(envChoice) ? envChoice : ''
+  const usedRoutes = isWeb && routing ? routes : []
 
-  const name = subdomain.trim().toLowerCase()
   const portNumber = Number(port)
-  const subdomainError = !name
-    ? 'Choose the public address visitors will use.'
-    : !SUBDOMAIN_PATTERN.test(name)
-      ? 'Use 3–32 lowercase letters, numbers or dashes.'
-      : ''
-  const portError = tab === 'folder' ? '' : port.trim() === ''
-    ? 'Enter the local port your app is listening on.'
+  const trimmedProjectName = projectName.trim().replace(/\s+/g, ' ')
+  const projectError = !creatingProject ? ''
+    : projectNameError(projectName)
+      || (projects.some(item => item.name.toLowerCase() === trimmedProjectName.toLowerCase()) ? 'You already have a project with that name.' : '')
+  const addressError = !needsAddress || address ? '' : 'Choose an address for the link.'
+  const portError = port.trim() === ''
+    ? 'Enter the port your app is running on.'
     : !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535
-      ? 'Port must be a whole number between 1 and 65535.'
+      ? 'Use a port between 1 and 65535.'
       : ''
-  const folderError = tab !== 'folder' ? '' : !folder
-    ? 'Choose the folder to share.'
-    : broadFolder && !broadConfirmed
-      ? 'Confirm that you want to share this entire location.'
+  const routesError = usedRoutes.some((route, index) => routeError(route, usedRoutes.filter((_, other) => other !== index)))
+    ? 'Fix the paths above, or remove the ones you don’t need.'
+    : ''
+  const passwordError = !needsPassword ? '' : !password.trim()
+    ? 'Set a password. Visitors type it before the share opens.'
+    : [...password].length < MIN_PASSWORD
+      ? `Use at least ${MIN_PASSWORD} characters.`
       : ''
-  const passwordError = needsPassword && !password ? 'Guests need a password to keep a share private. Set one, or verify with Google.' : ''
-  const firstError = subdomainError || portError || folderError || passwordError
+  const customNumber = Number(customAmount)
+  const customMinutes = customNumber * (EXPIRY_UNITS.find(unit => unit.id === customUnit)?.minutes ?? 1)
+  const expiryError = expiry !== 'custom' ? '' : !Number.isInteger(customNumber) || customNumber < 1
+    ? 'Enter a whole number, like 30 or 2.'
+    : customMinutes > MAX_EXPIRY_MINUTES
+      ? 'Pick a time up to 365 days.'
+      : ''
+  const duration = expiry === 'custom'
+    ? `${customMinutes}m`
+    : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
+  const visibleError = projectError || portError || routesError || addressError || passwordError
+  const firstError = visibleError || expiryError
+  const sharedWith = addresses.find(option => option.name === address)?.usedBy ?? []
+  const detectedLabel = detectedPorts.find(detected => detected.port === portNumber)?.label
+  const portStatus = Object.fromEntries(
+    [...usedRoutes.map(route => route.port), portNumber].filter(value => Number.isInteger(value) && value > 0)
+      .map(value => [value, detectedPorts.some(detected => detected.port === value)]),
+  ) as Record<number, boolean>
+  const show = (error: string) => (attempted ? error : '')
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
@@ -117,7 +208,7 @@ export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
     }
     if (event.key !== 'Tab' || !modalRef.current) return
     const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select, textarea, [href], [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), input:not([disabled]):not([readonly]), select, textarea, [href], [tabindex]:not([tabindex="-1"])'
     )
     if (focusable.length === 0) return
     const first = focusable[0]
@@ -131,52 +222,299 @@ export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
     }
   }
 
-  const chooseFolder = async () => {
-    setPickError('')
-    if (!window.kexoz?.pickFolder) {
-      setPickError('Folder sharing needs the Kexoz desktop app.')
-      return
-    }
-    try {
-      const picked = await window.kexoz.pickFolder()
-      if (!picked) return
-      if (!picked.isDirectory) {
-        setPickError('That location is not a folder.')
-        return
-      }
-      setFolder(picked)
-      setBroadConfirmed(false)
-    } catch (err) {
-      setPickError(err instanceof Error ? err.message : 'Could not open the folder picker.')
-    }
+  const toggleRouting = (next: boolean) => {
+    setRouting(next)
+    if (next && routes.length === 0) setRoutes([{ path: '/api', port: 8080 }])
   }
 
   const handleSubmit = async () => {
     setAttempted(true)
-    if (firstError || submitting) return
+    if (firstError) {
+      if (expiryError && !visibleError) setMoreOpen(true)
+      requestAnimationFrame(() => {
+        modalRef.current?.querySelector('.ps-ns-error')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      })
+      return
+    }
+    if (submitting) return
     setSubmitting(true)
     try {
       await onSubmit({
-        subdomain: name,
+        subdomain: needsAddress ? address : '',
         tunnelType,
-        port: tab === 'folder' ? 0 : portNumber,
-        access,
-        permissions,
-        password: gated && password ? password : undefined,
-        duration: EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined,
-        folder: tab === 'folder' && folder ? { root: folder.path, excludes: parseExcludes(excludesText) } : undefined,
+        port: portNumber,
+        access: effectiveAccess,
+        permissions: 'read-write',
+        password: needsPassword ? password : undefined,
+        duration,
+        preview: isWeb && preview,
+        extraRoutes: usedRoutes.map(route => ({ path: route.path.trim().replace(/\/+$/, ''), port: route.port })),
+        name: name.trim() || undefined,
+        projectId: creatingProject ? undefined : project,
+        newProjectName: creatingProject ? trimmedProjectName : undefined,
+        environment: chosenEnvironment || undefined,
       })
     } finally {
       setSubmitting(false)
     }
   }
 
-  const resourceNoun = tab === 'folder' ? 'folder' : tab === 'terminal' ? 'terminal' : 'port'
+  const onEnter = (e: ReactKeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') void handleSubmit() }
+
+  const projectField = (
+    <Field
+      label="Project"
+      htmlFor="new-share-project"
+      error={show(projectError)}
+      help={creatingProject ? 'Shares in a project start and stop together.' : undefined}
+    >
+      <div className="ps-ns-project">
+        {projects.length > 0 && (
+          <div className="ps-input-group">
+            <select
+              id="new-share-project"
+              className="ps-ns-select"
+              value={project}
+              onChange={e => setProject(e.target.value)}
+            >
+              {projects.map(item => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+              <option value={NEW_PROJECT}>New project…</option>
+            </select>
+          </div>
+        )}
+        {projectEnvironments.length > 1 && (
+          <div className="ps-input-group">
+            <select
+              className="ps-ns-select"
+              value={chosenEnvironment}
+              onChange={e => setEnvChoice(e.target.value)}
+              aria-label="Environment"
+            >
+              {projectEnvironments.map(item => (
+                <option key={item || 'main'} value={item}>{environmentLabel(item)}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {creatingProject && (
+          <input
+            id={projects.length > 0 ? 'new-share-project-name' : 'new-share-project'}
+            className="ps-input"
+            value={projectName}
+            maxLength={40}
+            onChange={e => setProjectName(e.target.value)}
+            onKeyDown={onEnter}
+            placeholder="Like my-app"
+            aria-label="New project name"
+            aria-invalid={attempted && Boolean(projectError)}
+            autoFocus={projects.length > 0}
+          />
+        )}
+      </div>
+    </Field>
+  )
+
+  const portField = (
+    <Field
+      label={routing && isWeb ? 'Frontend port' : 'Port'}
+      htmlFor="new-share-port"
+      error={show(portError)}
+      help={routing && isWeb ? 'Every path you don’t route below goes here.' : undefined}
+    >
+      <div className="ps-input-group ps-ns-port-input">
+        <span className="ps-input-prefix">localhost:</span>
+        <input
+          id="new-share-port"
+          className="ps-input ps-input-mono"
+          type="number"
+          value={port}
+          onChange={e => setPort(e.target.value)}
+          placeholder="3000"
+          min={1}
+          max={65535}
+          autoFocus={!creatingProject || projects.length === 0}
+          onKeyDown={onEnter}
+          aria-invalid={attempted && Boolean(portError)}
+        />
+      </div>
+      <div className="ps-ns-ports">
+        {detectedPorts.length > 0 ? (
+          <>
+            <span className="ps-ns-ports-label">Running now</span>
+            {detectedPorts.map(detected => (
+              <button
+                key={detected.port}
+                type="button"
+                className={`ps-ns-port detected ${portNumber === detected.port ? 'active' : ''}`}
+                onClick={() => setPort(String(detected.port))}
+                title={detected.label}
+              >
+                {detected.port}
+                <span className="ps-ns-port-name">{detected.label}</span>
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            <span className="ps-ns-ports-label">Common ports</span>
+            {QUICK_PORTS.map(p => (
+              <button
+                key={p}
+                type="button"
+                className={`ps-ns-port ${portNumber === p ? 'active' : ''}`}
+                onClick={() => setPort(String(p))}
+              >
+                {p}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+    </Field>
+  )
+
+  const routingFields = isWeb && (
+    <div className="ps-ns-field">
+      <div className="ps-ns-toggles">
+        <ToggleRow
+          title="Frontend and backend on one link"
+          desc="Send paths like /api to another port. Everything else goes to the port above."
+          checked={routing}
+          onChange={toggleRouting}
+        />
+      </div>
+      {routing && (
+        <>
+          <RouteRulesEditor rules={routes} onChange={setRoutes} fallbackPort={Number.isInteger(portNumber) && portNumber > 0 ? portNumber : null} portStatus={portStatus} />
+          {show(routesError) && <p className="ps-ns-error" role="alert">{routesError}</p>}
+        </>
+      )}
+    </div>
+  )
+
+  const accessFields = isWeb && (
+    <div className="ps-ns-field">
+      <Segmented
+        label="Who can open it"
+        options={[{ id: 'private', label: 'Password' }, { id: 'public', label: 'Anyone with the link' }]}
+        value={access}
+        onChange={setAccess}
+      />
+      {needsPassword && (
+        <div className="ps-input-group">
+          <input
+            id="new-share-password"
+            className="ps-input"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            placeholder="Password"
+            aria-label="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={onEnter}
+            aria-invalid={attempted && Boolean(passwordError)}
+          />
+          <button type="button" className="ps-ns-reveal" onClick={() => setShowPassword(v => !v)}>
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      )}
+      {needsPassword && show(passwordError)
+        ? <p className="ps-ns-error" role="alert">{passwordError}</p>
+        : <p className="field-help">{needsPassword ? 'Visitors type it once, then the share opens.' : 'Anyone who has the link can open it.'}</p>}
+    </div>
+  )
+
+  const expiryField = (
+    <Field label="Stop sharing after" error={show(expiryError)}>
+      <Segmented label="Stop sharing after" options={EXPIRY_CHOICES} value={expiry} onChange={setExpiry} />
+      {expiry === 'custom' && (
+        <div className="ps-input-group ps-ns-custom-expiry">
+          <input
+            className="ps-input ps-input-mono"
+            type="number"
+            min={1}
+            value={customAmount}
+            onChange={e => setCustomAmount(e.target.value)}
+            onKeyDown={onEnter}
+            aria-label="Stop sharing after"
+            aria-invalid={attempted && Boolean(expiryError)}
+            autoFocus
+          />
+          <select
+            className="ps-ns-select ps-ns-unit"
+            value={customUnit}
+            onChange={e => setCustomUnit(e.target.value as ExpiryUnit)}
+            aria-label="Unit"
+          >
+            {EXPIRY_UNITS.map(unit => (
+              <option key={unit.id} value={unit.id}>{unit.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </Field>
+  )
+
+  const addressField = (
+    <Field
+      label="Address"
+      htmlFor="new-share-address"
+      aside={<button type="button" className="ps-ns-link" onClick={onManageAddresses}>Manage addresses</button>}
+      error={addresses.length > 0 ? show(addressError) : undefined}
+      help={sharedWith.length > 0
+        ? `${sharedWith.join(', ')} ${sharedWith.length === 1 ? 'uses' : 'use'} this address too. Only one runs at a time, so starting this pauses the other.`
+        : undefined}
+    >
+      {addresses.length > 0 ? (
+        <div className="ps-input-group">
+          <span className="ps-input-prefix">https://</span>
+          <select
+            id="new-share-address"
+            className="ps-ns-select"
+            value={address}
+            onChange={e => setAddress(e.target.value)}
+          >
+            {addresses.map(option => (
+              <option key={option.name} value={option.name}>
+                {option.name}.{ROOT_DOMAIN}{option.usedBy.length > 0 ? ' (in use)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className="ps-ns-notice">
+          <span>You don’t have an address yet. Add one on the Domains page.</span>
+          <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onManageAddresses}>Domains</button>
+        </div>
+      )}
+    </Field>
+  )
+
+  const nameField = (
+    <Field label="Name" htmlFor="new-share-name" aside={<span className="ps-ns-optional">Optional</span>}>
+      <input
+        id="new-share-name"
+        className="ps-input"
+        value={name}
+        maxLength={60}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={onEnter}
+        placeholder={routing && isWeb ? 'Like Web app' : detectedLabel ? `Like ${detectedLabel}` : 'Like Frontend'}
+      />
+    </Field>
+  )
+
+  const projectLabel = creatingProject ? trimmedProjectName : projects.find(item => item.id === project)?.name
+  const previewLink = needsAddress ? (address ? `${address}.${ROOT_DOMAIN}` : 'Pick an address') : `A public ${protocol === 'udp' ? 'UDP' : 'TCP'} port`
+  const previewTarget = Number.isInteger(portNumber) && portNumber > 0 ? `localhost:${portNumber}` : 'localhost:port'
 
   return (
     <div className="ps-modal-overlay" onClick={onClose}>
       <div
-        className="ps-modal"
+        className="ps-modal ps-ns"
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-share-title"
@@ -184,295 +522,93 @@ export default function NewShareModal({ onClose, onSubmit, tier }: Props) {
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
-        <div className="ps-modal-header">
-          <span className="ps-modal-title" id="new-share-title">New share</span>
-          <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose} aria-label="Close dialog">✕</button>
+        <div className="ps-ns-header">
+          <div>
+            <h2 className="ps-modal-title" id="new-share-title">New share</h2>
+            <p className="ps-ns-context">
+              {projectLabel ? <>Adds to <strong>{projectLabel}</strong></> : 'Put something on this computer online with a link.'}
+            </p>
+          </div>
         </div>
-        <div className="ps-modal-body">
-          <div className="ps-share-tabs" role="tablist" aria-label="What to share">
-            {TABS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                className={`ps-tab ${tab === id ? 'active' : ''}`}
-                onClick={() => { setTab(id); setReadOnly(false); setAttempted(false) }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
 
-          <div className="ps-input-wrap">
-            <label className="ps-label" htmlFor="new-share-subdomain">Public address</label>
-            <div className="ps-input-group">
-              <input
-                id="new-share-subdomain"
-                className="ps-input ps-input-mono"
-                value={subdomain}
-                onChange={e => setSubdomain(e.target.value)}
-                placeholder="my-app"
-                autoFocus
-                aria-invalid={attempted && Boolean(subdomainError)}
-                aria-describedby={attempted && subdomainError ? 'new-share-subdomain-error' : undefined}
-              />
-              <span className="ps-input-suffix">.{ROOT_DOMAIN}</span>
-            </div>
-            {attempted && subdomainError && (
-              <p className="field-help" id="new-share-subdomain-error" role="alert" style={{ color: 'var(--red)' }}>{subdomainError}</p>
+        <div className="ps-ns-body">
+          <Section title="Your app">
+            <Segmented
+              label="Kind of traffic"
+              options={PROTOCOLS}
+              value={protocol}
+              onChange={next => { setProtocol(next); setEndToEnd(false) }}
+            />
+            {portField}
+            {protocol !== 'web' && (
+              <p className="field-help ps-ns-note">You get a public address and port. Anyone who has it can connect, so keep your service’s own login on.</p>
             )}
-          </div>
-
-          {tab !== 'folder' && (
-            <div className="ps-input-wrap">
-              <label className="ps-label" htmlFor="new-share-port">{tab === 'terminal' ? 'Terminal agent port' : 'Local port'}</label>
-              <div className="ps-input-group">
-                <span className="ps-input-prefix">localhost:</span>
-                <input
-                  id="new-share-port"
-                  className="ps-input ps-input-mono"
-                  type="number"
-                  value={port}
-                  onChange={e => setPort(e.target.value)}
-                  placeholder={tab === 'terminal' ? '7681' : '3000'}
-                  min={1}
-                  max={65535}
-                  onKeyDown={e => { if (e.key === 'Enter') void handleSubmit() }}
-                  aria-invalid={attempted && Boolean(portError)}
-                  aria-describedby={attempted && portError ? 'new-share-port-error' : undefined}
+            {protocol === 'tcp' && (
+              <div className="ps-ns-toggles">
+                <ToggleRow
+                  title="End-to-end encryption"
+                  desc="For services that speak TLS. You get a link instead of a port, and traffic reaches your service untouched."
+                  checked={endToEnd}
+                  onChange={setEndToEnd}
                 />
               </div>
-              {attempted && portError && (
-                <p className="field-help" id="new-share-port-error" role="alert" style={{ color: 'var(--red)' }}>{portError}</p>
-              )}
-              {tab === 'port' && (
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-                  {detectedPorts.length > 0 && (
-                    <>
-                      <span style={{ fontSize: 11, color: 'var(--text-soft)', display: 'flex', alignItems: 'center' }}>Active:</span>
-                      {detectedPorts.map(dp => (
-                        <button
-                          key={dp.port}
-                          type="button"
-                          title={dp.label}
-                          className={`ps-btn ps-btn-sm ${Number(port) === dp.port ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-                          onClick={() => setPort(String(dp.port))}
-                          style={{ fontFamily: 'var(--mono-font)', fontSize: 11, borderColor: 'var(--green)', color: Number(port) === dp.port ? 'inherit' : 'var(--green)' }}
-                        >
-                          <span style={{ marginRight: 4 }}>●</span>
-                          {dp.port}
-                        </button>
-                      ))}
-                      <div style={{ width: 1, backgroundColor: 'var(--border)', margin: '0 4px' }} />
-                    </>
-                  )}
-                  {QUICK_PORTS.filter(p => !detectedPorts.some(dp => dp.port === p)).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      className={`ps-btn ps-btn-sm ${Number(port) === p ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-                      onClick={() => setPort(String(p))}
-                      style={{ fontFamily: 'var(--mono-font)', fontSize: 11 }}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              )}
+            )}
+            {routingFields}
+          </Section>
+
+          <Section title={needsAddress ? 'Link' : 'Details'}>
+            {needsAddress && addressField}
+            <div className="ps-ns-grid">
+              {nameField}
+              {projectField}
             </div>
-          )}
+          </Section>
 
-          {tab === 'port' && (
-            <>
-              <div className="ps-input-wrap">
-                <label className="ps-label">Protocol</label>
-                <div className="ps-choice-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                  {PROTOCOLS.map(({ id, label, desc }) => (
-                    <Choice key={id} selected={protocol === id} title={label} desc={desc} onClick={() => { setProtocol(id); setEndToEnd(false); setReadOnly(false) }} />
-                  ))}
-                </div>
-              </div>
-              {protocol !== 'udp' && (
-                <div className="ps-input-wrap">
-                  <label className="ps-label">Encryption</label>
-                  <div className="ps-choice-grid">
-                    <Choice
-                      selected={!endToEnd}
-                      title="Standard"
-                      desc={protocol === 'web' ? 'TLS ends at the gateway; requests are inspectable' : 'Forward the raw stream'}
-                      onClick={() => setEndToEnd(false)}
-                    />
-                    <Choice
-                      selected={endToEnd}
-                      title="End-to-end"
-                      desc={protocol === 'web' ? 'TLS ends on your device; Kexoz cannot read traffic' : 'TLS passes through untouched'}
-                      onClick={() => { setEndToEnd(true); setReadOnly(false) }}
-                    />
-                  </div>
-                </div>
-              )}
-              {tunnelType === 'http' && (
-                <label className="ps-check">
-                  <input type="checkbox" checked={readOnly} onChange={e => setReadOnly(e.target.checked)} />
-                  <span><strong>Read-only.</strong> Visitors can only view (GET/HEAD); form posts, uploads and WebSockets are blocked.</span>
-                </label>
-              )}
-            </>
-          )}
-
-          {tab === 'terminal' && (
-            <label className="ps-check">
-              <input type="checkbox" checked={readOnly} onChange={e => setReadOnly(e.target.checked)} />
-              <span><strong>View-only.</strong> Visitors watch the terminal but their keystrokes are ignored.</span>
-            </label>
-          )}
-
-          {tab === 'folder' && (
-            <>
-              <div className="ps-input-wrap">
-                <label className="ps-label">Folder</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void chooseFolder()}>
-                    <FolderOpen size={14} /> {folder ? 'Change folder' : 'Choose folder'}
-                  </button>
-                  {folder && <span className="ps-folder-path">{folder.path}</span>}
-                </div>
-                {pickError && <p className="field-help" role="alert" style={{ color: 'var(--red)' }}>{pickError}</p>}
-                {attempted && folderError && !broadFolder && (
-                  <p className="field-help" role="alert" style={{ color: 'var(--red)' }}>{folderError}</p>
-                )}
-                <p className="field-help">Everything inside is shared, including subfolders. Nothing outside it is ever reachable.</p>
-              </div>
-              {broadFolder && folder && (
-                <div className="ps-danger-warning" role="alert">
-                  <span>
-                    <strong>{folder.isDriveRoot ? 'This is an entire drive.' : 'This is your whole home folder.'}</strong>{' '}
-                    It likely holds documents, credentials and app data. Share a specific project folder instead.
-                  </span>
-                  <label className="ps-check" style={{ color: 'inherit' }}>
-                    <input type="checkbox" checked={broadConfirmed} onChange={e => setBroadConfirmed(e.target.checked)} />
-                    <span>I understand everything in {folder.path} will be reachable through this link.</span>
-                  </label>
-                </div>
-              )}
-              <div className="ps-input-wrap">
-                <label className="ps-label">Permission</label>
-                <div className="ps-choice-grid">
-                  <Choice selected={!folderWritable} title="Read-only" desc="Browse, preview and download" onClick={() => setFolderWritable(false)} />
-                  <Choice selected={folderWritable} title="Read & write" desc="Visitors can also upload and delete files" onClick={() => setFolderWritable(true)} />
-                </div>
-              </div>
-              <div className="ps-input-wrap">
-                <label className="ps-label" htmlFor="new-share-excludes">Hidden from visitors</label>
-                <textarea
-                  id="new-share-excludes"
-                  className="ps-input ps-input-mono"
-                  rows={3}
-                  value={excludesText}
-                  onChange={e => setExcludesText(e.target.value)}
-                  placeholder={'.git\nnode_modules\nprivate/'}
+          {isWeb && (
+            <Section title="Who can open it">
+              {accessFields}
+              <div className="ps-ns-toggles">
+                <ToggleRow
+                  title="Visual review"
+                  desc="Visitors pin notes anywhere on the page. You resolve them here or on the page."
+                  checked={preview}
+                  onChange={setPreview}
                 />
-                <p className="field-help">
-                  One pattern per line: a name like <code>*.log</code>, or a path like <code>private/</code> to lock a subfolder.
-                  .env files, private keys and credential folders are always hidden.
-                </p>
               </div>
-            </>
+            </Section>
           )}
 
-          <div className="ps-input-wrap">
-            <label className="ps-label">Access</label>
-            {gated && tunnelType !== 'pty' ? (
-              <div className="ps-choice-grid">
-                <Choice
-                  selected={access === 'private'}
-                  title="Private"
-                  desc={tier === 'anonymous' ? 'Visitors enter a password' : 'Visitors sign in with Google'}
-                  onClick={() => setChosenAccess('private')}
-                />
-                <Choice selected={access === 'public'} title="Public" desc="Anyone with the link" onClick={() => setChosenAccess('public')} />
+          <div className="ps-ns-more-wrap">
+            <button
+              type="button"
+              className="ps-ns-more"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen(v => !v)}
+            >
+              {moreOpen ? 'Fewer options' : 'More options'}
+            </button>
+            {moreOpen && (
+              <div className="ps-ns-more-body">
+                {expiryField}
               </div>
-            ) : (
-              <div className="ps-share-meta">
-                <span className={`ps-badge ${access === 'public' ? 'ps-badge-public' : 'ps-badge-private'}`}>{access}</span>
-                <span className="field-help" style={{ margin: 0 }}>
-                  {tunnelType === 'pty'
-                    ? 'Terminals are always private: visitors must sign in with Google.'
-                    : 'The gateway cannot check visitors on raw or end-to-end streams, so protect the service itself (passwords, TLS).'}
-                </span>
-              </div>
-            )}
-            {access === 'public' && (
-              <div className="ps-exposure-warning" role="status">
-                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span><strong>Anyone on the internet can reach this {resourceNoun}.</strong> Only share it if it is safe to be public, and consider an expiry.</span>
-              </div>
-            )}
-            {needsPassword && (
-              <p className="field-help">Google sign-in protection needs a verified account, so guests protect private shares with a password.</p>
             )}
           </div>
-
-          <div className="ps-input-wrap">
-            <label className="ps-label">Expires after</label>
-            <div className="ps-choice-grid ps-choice-grid-4">
-              {EXPIRY_OPTIONS.map(option => (
-                <button
-                  key={option.id}
-                  type="button"
-                  aria-pressed={expiry === option.id}
-                  className={`ps-btn ps-btn-sm ${expiry === option.id ? 'ps-btn-primary' : 'ps-btn-secondary'}`}
-                  onClick={() => setExpiry(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {gated && (
-            <div className="ps-input-wrap">
-              {needsPassword ? null : (
-                <button
-                  type="button"
-                  className="ps-btn ps-btn-ghost ps-btn-sm"
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  style={{ alignSelf: 'flex-start', padding: 0, fontWeight: 500, color: 'var(--text-soft)' }}
-                >
-                  {showAdvanced ? 'Hide password option ▲' : 'Add a password ▼'}
-                </button>
-              )}
-              {(showAdvanced || needsPassword) && (
-                <>
-                  <label className="ps-label" htmlFor="new-share-password">Password</label>
-                  <input
-                    id="new-share-password"
-                    className="ps-input"
-                    type="password"
-                    placeholder="Visitors sign in with user “kexoz” and this password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    aria-invalid={attempted && Boolean(passwordError)}
-                  />
-                  {attempted && passwordError && (
-                    <p className="field-help" role="alert" style={{ color: 'var(--red)' }}>{passwordError}</p>
-                  )}
-                  {password && access === 'public' && (
-                    <p className="field-help">A password makes this share private.</p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
         </div>
-        <div className="ps-modal-footer">
-          <span className="field-help" style={{ flex: 1 }}>
-            {attempted && firstError ? firstError : ''}
-          </span>
-          <button className="ps-btn ps-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="ps-btn ps-btn-primary" onClick={() => void handleSubmit()} disabled={submitting}>
-            {submitting ? 'Starting…' : 'Start sharing'}
+
+        <div className="ps-ns-footer">
+          <div className="ps-ns-summary" aria-live="polite">
+            <span className="ps-ns-summary-link">{previewLink}</span>
+            <span className="ps-ns-summary-arrow" aria-hidden="true">→</span>
+            <span className="ps-ns-summary-target">{previewTarget}</span>
+          </div>
+          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="ps-btn ps-btn-primary"
+            onClick={() => void handleSubmit()}
+            disabled={submitting || (needsAddress && addresses.length === 0)}
+          >
+            {submitting ? 'Starting…' : creatingProject ? 'Create project and start' : 'Start sharing'}
           </button>
         </div>
       </div>

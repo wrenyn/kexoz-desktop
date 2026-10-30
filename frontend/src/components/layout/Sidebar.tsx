@@ -1,139 +1,99 @@
-import { useState } from 'react'
-import { LogOut, LogIn, ChevronLeft, ChevronRight, Keyboard } from 'lucide-react'
+import { SHARE_LIMITS, TIER_LABELS, tierOf, type ClientSession } from '../../lib/api'
 import { NAV_ITEMS, type Page } from '../../lib/navigation'
 import Logo from '../ui/Logo'
-import KeyboardShortcutsPopover from '../ui/KeyboardShortcutsPopover'
 
 type Props = {
   activePage: Page
   onNavigate: (page: Page) => void
+  onNewShare: () => void
+  session: ClientSession
+  liveShares: number
+  shareCount: number
   requestCount: number
-  theme: 'light' | 'dark'
-  onToggleTheme: () => void
-  ownerEmail: string
+  reviewCount: number
   onLogin: () => void
-  onLogout: () => void
-  collapsed: boolean
-  onToggleCollapse: () => void
+  verifying: boolean
 }
 
-export default function Sidebar({ activePage, onNavigate, requestCount, ownerEmail, onLogin, onLogout, collapsed, onToggleCollapse }: Props) {
-  const [showShortcuts, setShowShortcuts] = useState(false)
+export default function Sidebar({ activePage, onNavigate, onNewShare, session, liveShares, shareCount, requestCount, reviewCount, onLogin, verifying }: Props) {
+  const tier = tierOf(session)
+  const limit = SHARE_LIMITS[tier]
+  const pct = Math.min(100, (shareCount / limit) * 100)
+  const meterTone = pct >= 100 ? 'full' : pct >= 80 ? 'high' : ''
+  const email = session.ownerEmail
+
+  const badgeFor = (id: Page) => {
+    if (id === 'projects' && liveShares > 0) return <span className="ps-nav-badge ps-nav-badge-live">{liveShares} live</span>
+    if (id === 'review' && reviewCount > 0) return <span className="ps-nav-badge" title={`${reviewCount} open feedback`}>{reviewCount > 99 ? '99+' : reviewCount}</span>
+    if (id === 'requests' && requestCount > 0) return <span className="ps-nav-badge">{requestCount > 999 ? '999+' : requestCount}</span>
+    return null
+  }
+
+  const navButton = (id: Page, label: string, shortcut: string) => (
+    <button
+      key={id}
+      type="button"
+      className={`ps-nav-item ${activePage === id ? 'active' : ''}`}
+      aria-current={activePage === id ? 'page' : undefined}
+      title={`${label} (Ctrl+${shortcut})`}
+      onClick={() => onNavigate(id)}
+    >
+      {label}
+      {badgeFor(id)}
+    </button>
+  )
 
   return (
-    <aside className={`ps-sidebar animate-slide-left ${collapsed ? 'ps-sidebar-collapsed' : ''}`}>
-      {/* Brand */}
+    <aside className="ps-sidebar animate-slide-left">
       <div className="ps-sidebar-brand">
         <div className="ps-brand-icon">
           <Logo style={{ width: '100%', height: '100%' }} />
         </div>
-        {!collapsed && (
-          <div>
-            <div className="ps-brand-name">Kexoz</div>
-            <div className="ps-brand-version">Desktop</div>
-          </div>
-        )}
-        <button
-          type="button"
-          className="ps-sidebar-collapse-btn"
-          onClick={onToggleCollapse}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+        <div className="ps-brand-name">Kexoz</div>
+      </div>
+
+      <div className="ps-sidebar-cta">
+        <button type="button" className="ps-btn ps-btn-primary ps-sidebar-new" onClick={onNewShare}>
+          New share
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="ps-nav" style={{ flex: 1 }} aria-label="Primary">
-        {NAV_ITEMS.map(({ id, label, icon: Icon, shortcut }) => (
-          <button
-            key={id}
-            type="button"
-            className={`ps-nav-item ${activePage === id ? 'active' : ''} ${collapsed ? 'ps-nav-item-collapsed' : ''}`}
-            aria-current={activePage === id ? 'page' : undefined}
-            title={collapsed ? `${label} (Ctrl+${shortcut})` : `${label} (Ctrl+${shortcut})`}
-            onClick={() => onNavigate(id)}
-          >
-            <Icon size={16} className="ps-nav-icon" aria-hidden="true" />
-            {!collapsed && label}
-            {!collapsed && id === 'requests' && requestCount > 0 && (
-              <span className="ps-nav-badge">{requestCount}</span>
-            )}
-            {collapsed && id === 'requests' && requestCount > 0 && (
-              <span className="ps-nav-badge ps-nav-badge-dot" />
-            )}
-          </button>
+      <nav className="ps-nav" aria-label="Primary">
+        {([1, 2] as const).map(group => (
+          <div key={group} className="ps-nav-group">
+            {NAV_ITEMS.filter(item => item.group === group).map(item => navButton(item.id, item.label, item.shortcut))}
+          </div>
         ))}
       </nav>
 
-      {/* Account / Auth */}
-      <div className="ps-sidebar-status" style={{ position: 'relative' }}>
-        {/* Keyboard shortcuts button */}
+      <div className="ps-sidebar-footer">
+        <div className="ps-usage">
+          <div className="ps-usage-head">
+            <span>{TIER_LABELS[tier]} plan</span>
+            <span>{shareCount} of {limit} shares</span>
+          </div>
+          <div className="ps-usage-bar" role="progressbar" aria-label="Shares used" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+            <div className={meterTone} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
         <button
           type="button"
-          className="ps-sidebar-shortcut-btn"
-          onClick={() => setShowShortcuts(v => !v)}
-          title="Keyboard shortcuts (?)"
-          aria-label="Show keyboard shortcuts"
+          className={`ps-sidebar-account ${activePage === 'settings' ? 'active' : ''}`}
+          aria-current={activePage === 'settings' ? 'page' : undefined}
+          title={`Settings (Ctrl+${NAV_ITEMS.find(item => item.id === 'settings')?.shortcut})`}
+          onClick={() => onNavigate('settings')}
         >
-          <Keyboard size={13} />
-          {!collapsed && <span style={{ fontSize: 11, color: 'var(--text-soft)' }}>Shortcuts</span>}
+          <span className="ps-account-avatar" aria-hidden="true">{email ? email.charAt(0) : 'G'}</span>
+          <span className="ps-account-info">
+            <span className="ps-account-email" title={email || undefined}>{email || 'Guest'}</span>
+            <span className="ps-account-sub">Settings</span>
+          </span>
         </button>
-
-        {showShortcuts && (
-          <KeyboardShortcutsPopover onClose={() => setShowShortcuts(false)} />
-        )}
-
-        {ownerEmail ? (
-          <div style={{ padding: '0 2px' }}>
-            {!collapsed && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{
-                  fontSize: 11,
-                  color: 'var(--text-soft)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {ownerEmail}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--green)' }} title="Connected to Kexoz network">
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'currentColor' }} />
-                  Online
-                </div>
-              </div>
-            )}
-            <button
-              className="ps-btn ps-btn-secondary ps-btn-sm"
-              style={{ width: '100%', justifyContent: 'center' }}
-              onClick={onLogout}
-              title={collapsed ? 'Sign out' : undefined}
-            >
-              <LogOut size={13} style={{ marginRight: collapsed ? 0 : 6 }} />
-              {!collapsed && 'Sign out'}
-            </button>
-          </div>
-        ) : (
-          <div style={{ padding: '0 2px' }}>
-            {!collapsed && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--green)' }} title="Connected to Kexoz network">
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'currentColor' }} />
-                  Online
-                </div>
-              </div>
-            )}
-            <button
-              className="ps-btn ps-btn-secondary ps-btn-sm"
-              style={{ width: '100%', justifyContent: 'center' }}
-              onClick={onLogin}
-              title={collapsed ? 'Sign in with Google' : undefined}
-            >
-              <LogIn size={13} style={{ marginRight: collapsed ? 0 : 6 }} />
-              {!collapsed && 'Sign in with Google'}
-            </button>
-          </div>
+        {!email && (
+          <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm ps-sidebar-signin" onClick={onLogin} disabled={verifying}>
+            {verifying ? 'Check your browser…' : 'Sign in'}
+          </button>
         )}
       </div>
     </aside>
