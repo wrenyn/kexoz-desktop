@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import type { PersistentTunnel, Project } from '../../lib/api'
+import { toast } from 'react-hot-toast'
+import { bindCollabPreview, createCollabVersion, reviewWorkspaceUrl, type PersistentTunnel, type Project } from '../../lib/api'
 import { environmentError, environmentLabel, environmentName, shareAddress, shareLabel, shareStatus } from '../../lib/shares'
+import { extractError } from '../../lib/utils'
 import ProjectEditor from '../projects/ProjectEditor'
 import ShareList, { type ShareControls } from '../shares/ShareList'
 import { useCopy } from '../../hooks/useCopy'
 
 type Props = ShareControls & {
+  clientId: string
   projects: Project[]
   projectsLoaded: boolean
   openId: string | null
@@ -122,13 +125,14 @@ function SetupChoices({ onSeparate, onRouted }: { onSeparate: () => void; onRout
 
 export default function ProjectsPage(props: Props) {
   const {
-    persistentTunnels, isBusy, projects, projectsLoaded, openId, onOpenProject, onNewShare, onMoveShare,
+    clientId, persistentTunnels, isBusy, projects, projectsLoaded, openId, onOpenProject, onNewShare, onMoveShare,
     onCreateProject, onSaveProject, onDeleteProject, onStartProject, onStopProject, onCreateEnvironment, onOpenInbox,
   } = props
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState(false)
   const [envTab, setEnvTab] = useState('')
   const [addingEnv, setAddingEnv] = useState(false)
+  const [versionBusy, setVersionBusy] = useState(false)
   const { copied, copy } = useCopy()
   const byId = new Map(persistentTunnels.map(tunnel => [tunnel.id, tunnel]))
   const project = openId ? projects.find(item => item.id === openId) : undefined
@@ -141,6 +145,29 @@ export default function ProjectsPage(props: Props) {
     setCreating(false)
     setEnvTab('')
     setAddingEnv(false)
+  }
+
+  const cutVersion = async (item: Project, reuseLatest: boolean) => {
+    setVersionBusy(true)
+    try {
+      const previewTunnelId = item.tunnelIds.find(id => {
+        const tunnel = byId.get(id)
+        return tunnel && shareStatus(tunnel) === 'active'
+      }) || item.tunnelIds[0]
+      const { version, reused } = await createCollabVersion(clientId, item.id, {
+        reuseLatest,
+        previewTunnelId,
+      })
+      if (previewTunnelId && version.id) {
+        await bindCollabPreview(clientId, item.id, version.id, previewTunnelId).catch(() => null)
+      }
+      toast.success(reused ? `Reusing ${version.name}` : `Created ${version.name}`)
+      window.open(reviewWorkspaceUrl(clientId, item.id), '_blank', 'noopener')
+    } catch (err) {
+      toast.error(extractError(err))
+    } finally {
+      setVersionBusy(false)
+    }
   }
 
   const runButtons = (item: Project, running: number, startable: boolean) => (
@@ -178,6 +205,9 @@ export default function ProjectsPage(props: Props) {
             </p>
           </div>
           <div className="ps-header-actions">
+            <a className="ps-btn ps-btn-ghost ps-btn-sm" href={reviewWorkspaceUrl(clientId, project.id)} target="_blank" rel="noreferrer">Team board</a>
+            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, true)}>Reuse version</button>
+            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, false)}>New version</button>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onOpenInbox(project)}>Inbox</button>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)} disabled={editing}>Edit</button>
             <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => onNewShare(project.id, false, env)}>Add share</button>
@@ -260,7 +290,7 @@ export default function ProjectsPage(props: Props) {
             <div className="ps-card">
               <div className="ps-empty ps-empty-setup">
                 <span className="ps-empty-title">Put {project.name} online</span>
-                <span className="ps-empty-sub">Pick how visitors reach your app. You can mix both and change it later.</span>
+                <span className="ps-empty-sub">Choose how the team reaches this build. You can mix modes and change them later.</span>
                 <SetupChoices onRouted={() => onNewShare(project.id, true)} onSeparate={() => onNewShare(project.id)} />
                 {loose.length > 0 && (
                   <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)}>Add shares you already have</button>
@@ -275,7 +305,7 @@ export default function ProjectsPage(props: Props) {
 
   const liveCount = persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length
   const overview = projects.length === 0
-    ? 'Each project is one app: its frontend, backend and anything else you share, started with one click.'
+    ? 'One project per app — frontend, API, and anything else on the stack, started together.'
     : [
         `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`,
         `${persistentTunnels.length} ${persistentTunnels.length === 1 ? 'share' : 'shares'}`,

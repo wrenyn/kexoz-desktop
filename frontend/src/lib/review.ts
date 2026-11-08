@@ -28,9 +28,9 @@ export function noteBadges(note: PreviewNote, revisions: PreviewRevision[]): Not
   if (note.status === 'resolved') {
     const fixedIn = revisions.find(revision => revision.id === note.resolvedRevisionId)
     badges.push({ label: fixedIn ? `Fixed in v${fixedIn.number}` : 'Fixed', className: 'ps-badge-green' })
-    badges.push(note.verifiedAt ? { label: 'Confirmed', className: 'ps-badge-blue' } : { label: 'Waiting for the reviewer', className: 'ps-badge-gray' })
+    badges.push(note.verifiedAt ? { label: 'Confirmed', className: 'ps-badge-mint' } : { label: 'Waiting for the reviewer', className: 'ps-badge-gray' })
   } else if (note.status === 'in_progress') {
-    badges.push({ label: 'In progress', className: 'ps-badge-blue' })
+    badges.push({ label: 'In progress', className: 'ps-badge-mint' })
   } else {
     badges.push({ label: 'Open', className: 'ps-badge-gray' })
   }

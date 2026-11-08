@@ -348,8 +348,8 @@ ipcMain.handle('kexoz:update-tray', async (_event, shares) => {
 
 const TITLE_BAR_HEIGHT = 36;
 const TITLE_BAR_THEMES = {
-  dark: { color: '#202322', symbolColor: '#E9EDE6' },
-  light: { color: '#E9EDE6', symbolColor: '#202322' },
+  dark: { color: '#101310', symbolColor: '#EDF2E9' },
+  light: { color: '#EDF2E9', symbolColor: '#101310' },
 };
 
 ipcMain.handle('kexoz:set-titlebar-theme', async (_event, theme) => {
@@ -375,7 +375,7 @@ const createWindow = () => {
     minHeight: 640,
     title: 'Kexoz',
     icon: APP_ICON,
-    backgroundColor: '#202322',
+    backgroundColor: '#101310',
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',

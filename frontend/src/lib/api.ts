@@ -148,6 +148,13 @@ export const ensureClientIdentity = async (existingId: string | null): Promise<C
 export const upgradeUrl = (clientId: string, planId: 'pro' | 'pro_plus'): string =>
   `https://${ROOT_DOMAIN}/account?clientId=${encodeURIComponent(clientId)}&upgrade=${planId}`
 
+/** Website collaboration shell for team review (versions, board, client links). */
+export const reviewWorkspaceUrl = (clientId: string, projectId?: string): string => {
+  const base = `https://${ROOT_DOMAIN}/app`
+  if (!projectId) return `${base}?clientId=${encodeURIComponent(clientId)}`
+  return `${base}/projects/${encodeURIComponent(projectId)}?workspace=${encodeURIComponent(clientId)}`
+}
+
 export const tierOf = (session: Pick<ClientSession, 'plan' | 'ownerEmail'>): Tier => {
   if (session.plan === 'pro_plus') return 'pro_plus'
   if (session.plan === 'pro') return 'pro'
@@ -443,19 +450,29 @@ export const setPreviewNoteStatus = async (clientId: string, noteId: string, sta
   changePreviewNote(clientId, noteId, ACTION_FOR_STATUS[status])
 
 /** Starts, resolves or reopens a note; resolving can name the revision that fixed it. */
+const feedbackTimeout = { timeout: 20_000 }
+
 export const changePreviewNote = async (
   clientId: string, noteId: string, action: NoteAction, options: { revisionId?: string; comment?: string; author?: string } = {},
 ): Promise<PreviewNote | null> => {
-  const { data } = await axios.put<{ note?: PreviewNote }>(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`, { clientId, action, ...options }, { params: { clientId } })
+  const { data } = await axios.put<{ note?: PreviewNote }>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`,
+    { clientId, action, ...options },
+    { params: { clientId }, ...feedbackTimeout },
+  )
   return data.note ?? null
 }
 
 export const deletePreviewNote = async (clientId: string, noteId: string): Promise<void> => {
-  await axios.delete(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`, { params: { clientId } })
+  await axios.delete(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`, { params: { clientId }, ...feedbackTimeout })
 }
 
 export const replyToNote = async (clientId: string, noteId: string, body: string, author?: string): Promise<PreviewReply> => {
-  const { data } = await axios.post<{ reply: PreviewReply }>(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/replies`, { clientId, body, author }, { params: { clientId } })
+  const { data } = await axios.post<{ reply: PreviewReply }>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/replies`,
+    { clientId, body, author },
+    { params: { clientId }, ...feedbackTimeout },
+  )
   return data.reply
 }
 
@@ -722,4 +739,80 @@ export const revokeAccessSession = async (clientId: string, tunnelId: string, se
 export const signEveryoneOut = async (clientId: string, tunnelId: string): Promise<number> => {
   const { data } = await axios.post<{ signedOut?: number }>(`${sessionsUrl(tunnelId)}/revoke-all`, { clientId }, { params: { clientId } })
   return data.signedOut ?? 0
+}
+
+export type TeamMember = {
+  id: string
+  email: string
+  role: 'editor' | 'viewer' | string
+  status: 'pending' | 'active' | string
+  memberClientId?: string
+  inviteToken?: string
+  createdAt: string
+  acceptedAt?: string
+}
+
+export type SharedWorkspace = {
+  ownerClientId: string
+  ownerEmail: string
+  role: string
+  acceptedAt?: string
+}
+
+export type CollabVersion = {
+  id: string
+  projectId: string
+  number: number
+  name: string
+  status: string
+  previewTunnelId?: string
+}
+
+/** Creates a project version (or reuses latest) and optionally binds a live preview tunnel. */
+export const createCollabVersion = async (
+  clientId: string,
+  projectId: string,
+  input: { name?: string; reuseLatest?: boolean; previewTunnelId?: string; gitCommit?: string } = {},
+): Promise<{ version: CollabVersion; reused: boolean }> => {
+  const { data } = await axios.post<{ version: CollabVersion; reused: boolean }>(
+    `${API_BASE_URL}/api/v1/workspaces/${encodeURIComponent(clientId)}/projects/${encodeURIComponent(projectId)}/versions`,
+    input,
+    { params: { clientId }, headers: { 'X-Kexoz-Client-ID': clientId }, timeout: 20_000 },
+  )
+  return { version: data.version, reused: Boolean(data.reused) }
+}
+
+export const bindCollabPreview = async (
+  clientId: string, projectId: string, versionId: string, tunnelId: string,
+): Promise<CollabVersion> => {
+  const { data } = await axios.post<{ version: CollabVersion }>(
+    `${API_BASE_URL}/api/v1/workspaces/${encodeURIComponent(clientId)}/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/preview`,
+    { tunnelId },
+    { params: { clientId }, headers: { 'X-Kexoz-Client-ID': clientId }, timeout: 20_000 },
+  )
+  return data.version
+}
+
+export const listTeam = async (clientId: string): Promise<TeamMember[]> => {
+  const { data } = await axios.get<{ members: TeamMember[] | null }>(`${API_BASE_URL}/client/team`, { params: { clientId } })
+  return data.members ?? []
+}
+
+export const inviteTeamMember = async (clientId: string, email: string, role: 'editor' | 'viewer' = 'editor'): Promise<{ id: string; email: string; role: string; status: string; inviteUrl: string; token: string }> => {
+  const { data } = await axios.post<{ id: string; email: string; role: string; status: string; inviteUrl: string; token: string }>(`${API_BASE_URL}/client/team/invites`, { clientId, email, role }, { params: { clientId } })
+  return data
+}
+
+export const revokeTeamMember = async (clientId: string, memberId: string): Promise<void> => {
+  await axios.delete(`${API_BASE_URL}/client/team/members/${encodeURIComponent(memberId)}`, { params: { clientId } })
+}
+
+export const acceptTeamInvite = async (clientId: string, token: string): Promise<{ ok: boolean; ownerClientId: string; role: string }> => {
+  const { data } = await axios.post<{ ok: boolean; ownerClientId: string; role: string }>(`${API_BASE_URL}/client/team/accept`, { clientId, token }, { params: { clientId } })
+  return data
+}
+
+export const listSharedWorkspaces = async (clientId: string): Promise<SharedWorkspace[]> => {
+  const { data } = await axios.get<{ workspaces: SharedWorkspace[] | null }>(`${API_BASE_URL}/client/team/shared`, { params: { clientId } })
+  return data.workspaces ?? []
 }

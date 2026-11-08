@@ -524,7 +524,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
       >
         <div className="ps-ns-header">
           <div>
-            <h2 className="ps-modal-title" id="new-share-title">New share</h2>
+            <h2 className="ps-modal-title" id="new-share-title">New preview</h2>
             <p className="ps-ns-context">
               {projectLabel ? <>Adds to <strong>{projectLabel}</strong></> : 'Put something on this computer online with a link.'}
             </p>

@@ -270,6 +270,71 @@ function registerReviewHandlers() {
     if (!token) throw new Error('Connect GitHub first.');
     return githubFetch(token, method, apiPath, payload && payload.body);
   });
+
+  // ── Linear ─────────────────────────────────────────────────────────────
+  const linearTokenFile = () => path.join(app.getPath('userData'), 'linear-token.bin');
+  const readLinearToken = async () => {
+    try {
+      const raw = await fs.readFile(linearTokenFile());
+      if (!safeStorage.isEncryptionAvailable()) return '';
+      return safeStorage.decryptString(raw);
+    } catch {
+      return '';
+    }
+  };
+  const linearFetch = async (token, query, variables) => {
+    const res = await net.fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: token,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Kexoz-Desktop',
+      },
+      body: JSON.stringify({ query, variables: variables || {} }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || (data.errors && data.errors.length)) {
+      const message = data.errors && data.errors[0] && data.errors[0].message
+        ? data.errors[0].message
+        : `Linear answered ${res.status}`;
+      throw new Error(res.status === 401 ? 'Linear rejected the key. Connect again with a new one.' : message);
+    }
+    return data.data;
+  };
+
+  ipcMain.handle('kexoz:linear-status', async () => {
+    const token = await readLinearToken();
+    if (!token) return { connected: false, name: '', encrypted: safeStorage.isEncryptionAvailable() };
+    try {
+      const data = await linearFetch(token, '{ viewer { name } }');
+      return { connected: true, name: (data.viewer && data.viewer.name) || '', encrypted: true };
+    } catch (error) {
+      return { connected: false, name: '', encrypted: true, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('kexoz:linear-connect', async (_event, value) => {
+    const token = String(value || '').trim();
+    if (token.length < 20) throw new Error('That doesn\u2019t look like a Linear API key.');
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('This computer can\u2019t store the key securely.');
+    const data = await linearFetch(token, '{ viewer { name } }');
+    await fs.mkdir(app.getPath('userData'), { recursive: true });
+    await fs.writeFile(linearTokenFile(), safeStorage.encryptString(token), { mode: 0o600 });
+    return { connected: true, name: (data.viewer && data.viewer.name) || '', encrypted: true };
+  });
+
+  ipcMain.handle('kexoz:linear-disconnect', async () => {
+    await fs.rm(linearTokenFile(), { force: true });
+    return true;
+  });
+
+  ipcMain.handle('kexoz:linear-request', async (_event, payload) => {
+    const query = String(payload && payload.query || '');
+    if (!query.trim()) throw new Error('Missing Linear query.');
+    const token = await readLinearToken();
+    if (!token) throw new Error('Connect Linear first.');
+    return linearFetch(token, query, payload && payload.variables);
+  });
 }
 
 module.exports = { registerReviewHandlers, isLocalUrl, portForRequest, startRouteProxy };

@@ -41,6 +41,7 @@ type PageCapture = {
 }
 
 type GitHubStatus = { connected: boolean; login: string; encrypted: boolean; error?: string }
+type LinearStatus = { connected: boolean; name: string; encrypted: boolean; error?: string }
 
 declare global {
   interface Window {
@@ -62,6 +63,10 @@ declare global {
       githubConnect?: (token: string) => Promise<GitHubStatus>
       githubDisconnect?: () => Promise<boolean>
       githubRequest?: <T = unknown>(payload: { method: 'GET' | 'POST' | 'PATCH'; path: string; body?: unknown }) => Promise<T>
+      linearStatus?: () => Promise<LinearStatus>
+      linearConnect?: (token: string) => Promise<LinearStatus>
+      linearDisconnect?: () => Promise<boolean>
+      linearRequest?: <T = unknown>(payload: { query: string; variables?: Record<string, unknown> }) => Promise<T>
       onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState, reason?: string) => void) => () => void
       onLogEntry: (callback: (key: string, entry: import('./lib/api').RequestLogEntry) => void) => () => void
     }

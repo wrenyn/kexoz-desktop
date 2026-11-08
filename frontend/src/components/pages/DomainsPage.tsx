@@ -162,7 +162,7 @@ export default function DomainsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Domains</h1>
-          <p className="ps-page-subtitle">Addresses you own. Each share uses one of them.</p>
+          <p className="ps-page-subtitle">Addresses your previews publish on</p>
         </div>
         {isPro && (
           <div className="ps-header-actions">

@@ -62,6 +62,25 @@ Point the app at a different gateway (for example a local one) with `VITE_KEXOZ_
 (see `frontend/.env.example`). See [ARCHITECTURE.md](./ARCHITECTURE.md),
 [CONTRIBUTING.md](./CONTRIBUTING.md) and [SECURITY.md](./SECURITY.md).
 
+## Design
+
+UI tokens live in `frontend/src/styles/tokens.css` using the Wrenyn **Obsidian + Lime** palette:
+
+| Token | Hex |
+| --- | --- |
+| Background | `#101310` |
+| Sidebar | `#151B15` |
+| Surface | `#191F19` |
+| Elevated | `#252D24` |
+| Lime | `#B6F36B` |
+| Mint | `#82C9A9` |
+| Amber | `#C3A46C` |
+| Text | `#EDF2E9` |
+| Muted | `#929B8E` |
+| Border | `#303A30` |
+
+Source of truth for the org brand: `D:\projects\wrenyn\readme.md.md`.
+
 ## License
 
 Proprietary. © [Wrenyn](https://wrenyn.com), all rights reserved; see [LICENSE](./LICENSE)

@@ -76,13 +76,14 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpenReview }: {
+export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpenReview, onOpenNote }: {
   tunnel: PersistentTunnel
   notes: PreviewNote[]
   busyId: string | null
   onStatus: (note: PreviewNote, status: PreviewNote['status']) => void
   onDelete: (note: PreviewNote) => void
   onOpenReview?: () => void
+  onOpenNote?: (note: PreviewNote) => void
 }) {
   const [showResolved, setShowResolved] = useState(false)
   const open = notes.filter(note => note.status !== 'resolved')
@@ -130,14 +131,26 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpe
                   {note.authorRole === 'owner' && <span className="ps-note-owner">Owner</span>}
                   · {timeAgo(note.createdAt)} ·{' '}
                   <a href={pageUrl(note.path)} target="_blank" rel="noreferrer" className="ps-share-note-path">{note.path || '/'}</a>
-                  {note.status === 'in_progress' && <span className="ps-badge ps-badge-blue">In progress</span>}
+                  {note.status === 'in_progress' && <span className="ps-badge ps-badge-mint">In progress</span>}
                   {(note.replies?.length ?? 0) > 0 && <span className="ps-share-note-replies">{note.replies!.length} {note.replies!.length === 1 ? 'reply' : 'replies'}</span>}
+                  {note.issueUrl && (
+                    <a className="ps-share-note-issue" href={note.issueUrl} target="_blank" rel="noreferrer">Issue</a>
+                  )}
                 </span>
                 <div className="ps-feedback-actions">
+                  {note.status === 'open' && (
+                    <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'in_progress')}>Start</button>
+                  )}
+                  {note.status === 'in_progress' && (
+                    <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'open')}>Put back</button>
+                  )}
                   {note.status !== 'resolved' ? (
                     <button className="ps-btn ps-btn-secondary ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'resolved')}>Mark fixed</button>
                   ) : (
                     <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={busyId === note.id} onClick={() => onStatus(note, 'open')}>Reopen</button>
+                  )}
+                  {onOpenNote && (
+                    <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onOpenNote(note)}>Open thread</button>
                   )}
                   <button className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busyId === note.id} onClick={() => onDelete(note)}>Delete</button>
                 </div>

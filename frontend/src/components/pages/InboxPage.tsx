@@ -215,7 +215,7 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
     <div className="ps-page-header animate-fade-down">
       <div>
         <h1 className="ps-page-title">Inbox</h1>
-        <p className="ps-page-subtitle">A permanent URL for webhooks and OAuth callbacks. Kexoz keeps every request, even while your app is offline.</p>
+        <p className="ps-page-subtitle">Permanent URL for webhooks and OAuth — requests are kept even while the app is offline</p>
       </div>
       {projects.length > 1 && project && (
         <div className="ps-header-actions">

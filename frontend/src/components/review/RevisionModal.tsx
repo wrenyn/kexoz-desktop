@@ -5,6 +5,7 @@ import {
   type PersistentTunnel, type PreviewNote, type PreviewRevision,
 } from '../../lib/api'
 import { closeIssueAsFixed, recentChanges, type GitHubLinkOption } from '../../lib/github'
+import { completeLinearIssue } from '../../lib/linear'
 import { normalizeRevision } from '../../hooks/useReview'
 import { pagesToCapture, portForPath } from '../../lib/review'
 import { extraRoutes } from '../../lib/shares'
@@ -23,13 +24,14 @@ type Props = {
   /** Edit this revision instead of creating one. */
   revision?: PreviewRevision
   github: { ready: boolean; repo: string }
+  linear?: { ready: boolean; teamId: string }
   onClose: () => void
   onSaved: () => void
 }
 
 const splitLinks = (text: string) => text.split(/\s+/).map(line => line.trim()).filter(Boolean)
 
-export default function RevisionModal({ clientId, tunnel, notes, revision, github, onClose, onSaved }: Props) {
+export default function RevisionModal({ clientId, tunnel, notes, revision, github, linear, onClose, onSaved }: Props) {
   const editing = Boolean(revision)
   const pending = useMemo(() => notes.filter(note => note.status !== 'resolved'), [notes])
   const [label, setLabel] = useState(revision?.label ?? '')
@@ -106,11 +108,15 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, githu
       }
       const shots = capture ? await capturePages(target) : 0
       let closed = 0
-      if (!editing && closeIssues && github.ready) {
+      if (!editing && closeIssues) {
         for (const note of withIssues) {
           setProgress('Closing linked issues…')
           try {
-            if (await closeIssueAsFixed(note.issueUrl!, target)) closed++
+            const url = note.issueUrl!
+            let done = false
+            if (github.ready && /github\.com/i.test(url)) done = await closeIssueAsFixed(url, target)
+            else if (linear?.ready && /linear\.app/i.test(url)) done = await completeLinearIssue(url, target)
+            if (done) closed++
           } catch (err) {
             toast.error(`Couldn’t close an issue: ${extractError(err)}`)
           }
@@ -208,10 +214,10 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, githu
             </>
           )}
 
-          {!editing && github.ready && withIssues.length > 0 && (
+          {!editing && withIssues.length > 0 && (github.ready || linear?.ready) && (
             <label className="ps-check">
               <input type="checkbox" checked={closeIssues} onChange={event => setCloseIssues(event.target.checked)} />
-              <span>Close {withIssues.length} linked GitHub issue{withIssues.length === 1 ? '' : 's'} with a link to this revision</span>
+              <span>Close {withIssues.length} linked issue{withIssues.length === 1 ? '' : 's'} with a note on this revision</span>
             </label>
           )}
         </div>

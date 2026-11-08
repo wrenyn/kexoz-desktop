@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('kexoz', {
   githubConnect: (token) => ipcRenderer.invoke('kexoz:github-connect', token),
   githubDisconnect: () => ipcRenderer.invoke('kexoz:github-disconnect'),
   githubRequest: (payload) => ipcRenderer.invoke('kexoz:github-request', payload),
+  linearStatus: () => ipcRenderer.invoke('kexoz:linear-status'),
+  linearConnect: (token) => ipcRenderer.invoke('kexoz:linear-connect', token),
+  linearDisconnect: () => ipcRenderer.invoke('kexoz:linear-disconnect'),
+  linearRequest: (payload) => ipcRenderer.invoke('kexoz:linear-request', payload),
   onTunnelState: (callback) => {
     const handler = (_event, key, state, reason) => callback(key, state, reason);
     ipcRenderer.on('kexoz:tunnel-state', handler);

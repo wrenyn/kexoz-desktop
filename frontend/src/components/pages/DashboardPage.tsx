@@ -72,7 +72,7 @@ export default function DashboardPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Dashboard</h1>
-          <p className="ps-page-subtitle">Traffic and usage across all your shares</p>
+          <p className="ps-page-subtitle">Live traffic and bandwidth across your previews</p>
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export default function DashboardPage({
                 <div className="ps-overview-card-title">Share your first app</div>
                 <div className="ps-overview-card-sub">Create a project, pick the ports your app runs on and get a link anyone can open.</div>
               </div>
-              <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New share</button>
+              <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New preview</button>
             </div>
           </div>
         )}

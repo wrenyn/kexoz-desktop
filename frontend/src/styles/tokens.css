@@ -1,10 +1,23 @@
-/* Kexoz brand palette. Fonts are bundled via @fontsource (imported in main.tsx). */
+/* Kexoz brand palette — Obsidian + Lime. Fonts via @fontsource (main.tsx). */
 :root {
-  --color-graphite:           #202322;
-  --color-graphite-secondary: #343B37;
-  --color-acid-lime:          #C6F36B;
-  --color-background-light:   #E9EDE6;
-  --color-white:              #FFFFFF;
+  --color-background: #101310;
+  --color-sidebar:    #151B15;
+  --color-surface:    #191F19;
+  --color-elevated:   #252D24;
+  --color-lime:       #B6F36B;
+  --color-mint:       #82C9A9;
+  --color-amber:      #C3A46C;
+  --color-text:       #EDF2E9;
+  --color-muted:      #929B8E;
+  --color-border:     #303A30;
+  --color-white:      #FFFFFF;
+
+  /* Legacy aliases */
+  --color-graphite:           var(--color-background);
+  --color-graphite-secondary: var(--color-elevated);
+  --color-acid-lime:          var(--color-lime);
+  --color-background-light:   #EDF2E9;
+  --color-obsidian:           var(--color-background);
 }
 
 /* ═══════════════════════════════════════════════
@@ -15,70 +28,72 @@
   color-scheme: dark;
 
   /* Backgrounds */
-  --bg-app:        #202322;
-  --bg-sidebar:    #1B1E1D;
-  --bg-surface:    #272B29;
-  --bg-elevated:   #2D322F;
-  --bg-overlay:    rgba(27, 30, 29, 0.88);
-  --bg-input:      #1F2221;
-  --bg-hover:      rgba(233, 237, 230, 0.05);
-  --bg-active:     rgba(233, 237, 230, 0.09);
+  --bg-app:        #101310;
+  --bg-sidebar:    #151B15;
+  --bg-surface:    #191F19;
+  --bg-elevated:   #252D24;
+  --bg-overlay:    rgba(16, 19, 16, 0.88);
+  --bg-input:      #151B15;
+  --bg-hover:      rgba(237, 242, 233, 0.05);
+  --bg-active:     rgba(237, 242, 233, 0.09);
 
   /* Borders */
-  --border:        #343B37;
-  --border-bright: #48514C;
-  --border-focus:  rgba(198, 243, 107, 0.6);
-  --border-input:  #3A413D;
+  --border:        #303A30;
+  --border-bright: #3D493C;
+  --border-focus:  rgba(182, 243, 107, 0.6);
+  --border-input:  #303A30;
 
   /* Accents */
-  --accent:        #C6F36B;
-  --accent-dim:    rgba(198, 243, 107, 0.12);
-  --accent-border: rgba(198, 243, 107, 0.32);
-  --accent-glow:   rgba(198, 243, 107, 0.18);
-  --accent-hover:  #D3F78A;
-  --text-on-accent:#202322;
+  --accent:        #B6F36B;
+  --accent-dim:    rgba(182, 243, 107, 0.12);
+  --accent-border: rgba(182, 243, 107, 0.32);
+  --accent-glow:   rgba(182, 243, 107, 0.18);
+  --accent-hover:  #C7F88A;
+  --text-on-accent:#101310;
 
   /* Glows & Glass */
-  --glow-primary:  rgba(198, 243, 107, 0.10);
-  --glass-bg:      rgba(39, 43, 41, 0.6);
-  --glass-border:  rgba(233, 237, 230, 0.06);
+  --glow-primary:  rgba(182, 243, 107, 0.10);
+  --glass-bg:      rgba(25, 31, 25, 0.6);
+  --glass-border:  rgba(237, 242, 233, 0.06);
 
-  /* Status — success follows the lime accent */
-  --green:         #C6F36B;
-  --green-dim:     rgba(198, 243, 107, 0.12);
-  --green-border:  rgba(198, 243, 107, 0.32);
+  /* Status — success follows lime; soft positive uses mint */
+  --green:         #B6F36B;
+  --green-dim:     rgba(182, 243, 107, 0.12);
+  --green-border:  rgba(182, 243, 107, 0.32);
+  --mint:          #82C9A9;
+  --mint-dim:      rgba(130, 201, 169, 0.14);
   --red:           #F87171;
   --red-dim:       rgba(248, 113, 113, 0.14);
-  --yellow:        #F5B85B;
-  --yellow-dim:    rgba(245, 184, 91, 0.14);
+  --yellow:        #C3A46C;
+  --yellow-dim:    rgba(195, 164, 108, 0.14);
   --blue:          #7DD3FC;
   --blue-dim:      rgba(125, 211, 252, 0.14);
   --cyan:          #7DD3FC;
   --cyan-dim:      rgba(125, 211, 252, 0.12);
   /* Share exposure: amber = public, sky = private */
-  --amber:         #F5B85B;
-  --amber-dim:     rgba(245, 184, 91, 0.14);
+  --amber:         #C3A46C;
+  --amber-dim:     rgba(195, 164, 108, 0.14);
   --sky:           #7DD3FC;
   --sky-dim:       rgba(125, 211, 252, 0.14);
 
   /* Text */
-  --text:          #E9EDE6;
+  --text:          #EDF2E9;
   --text-strong:   #FFFFFF;
-  --text-muted:    #A7B0A9;
-  --text-soft:     #7D877F;
-  --text-accent:   #C6F36B;
+  --text-muted:    #929B8E;
+  --text-soft:     #6F786B;
+  --text-accent:   #B6F36B;
 
   /* Shadows */
   --shadow-sm:     0 1px 3px rgba(0,0,0,0.35);
   --shadow-md:     0 4px 16px rgba(0,0,0,0.4);
   --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
-  --shadow-accent: 0 0 0 3px rgba(198, 243, 107, 0.18);
+  --shadow-accent: 0 0 0 3px rgba(182, 243, 107, 0.18);
 
-  /* Terminal surfaces stay graphite in both themes */
-  --console-bg:     #1B1E1D;
-  --console-text:   #E9EDE6;
-  --console-muted:  #A7B0A9;
-  --console-border: #343B37;
+  /* Terminal surfaces stay obsidian in both themes */
+  --console-bg:     #151B15;
+  --console-text:   #EDF2E9;
+  --console-muted:  #929B8E;
+  --console-border: #303A30;
 }
 
 /* ═══════════════════════════════════════════════
@@ -88,14 +103,14 @@
   color-scheme: light;
 
   /* Backgrounds */
-  --bg-app:        #E9EDE6;
+  --bg-app:        #EDF2E9;
   --bg-sidebar:    #F5F7F3;
   --bg-surface:    #FFFFFF;
   --bg-elevated:   #F5F7F3;
-  --bg-overlay:    rgba(233, 237, 230, 0.92);
+  --bg-overlay:    rgba(237, 242, 233, 0.92);
   --bg-input:      #FFFFFF;
-  --bg-hover:      rgba(32, 35, 34, 0.05);
-  --bg-active:     rgba(32, 35, 34, 0.08);
+  --bg-hover:      rgba(16, 19, 16, 0.05);
+  --bg-active:     rgba(16, 19, 16, 0.08);
 
   /* Borders */
   --border:        #D2D9CE;
@@ -103,47 +118,49 @@
   --border-focus:  rgba(63, 98, 18, 0.55);
   --border-input:  #C9D1C4;
 
-  /* Accents — graphite fill with lime text; lime itself fails contrast on light bg */
-  --accent:        #202322;
+  /* Accents — obsidian fill with lime text; raw lime fails contrast on light bg */
+  --accent:        #101310;
   --accent-dim:    rgba(63, 98, 18, 0.10);
   --accent-border: rgba(63, 98, 18, 0.28);
   --accent-glow:   rgba(63, 98, 18, 0.14);
-  --accent-hover:  #343B37;
-  --text-on-accent:#C6F36B;
+  --accent-hover:  #191F19;
+  --text-on-accent:#B6F36B;
 
   /* Glows & Glass */
-  --glow-primary:  rgba(32, 35, 34, 0.06);
+  --glow-primary:  rgba(16, 19, 16, 0.06);
   --glass-bg:      rgba(255, 255, 255, 0.6);
-  --glass-border:  rgba(32, 35, 34, 0.06);
+  --glass-border:  rgba(16, 19, 16, 0.06);
 
   /* Status */
   --green:         #3F6212;
   --green-dim:     rgba(63, 98, 18, 0.10);
   --green-border:  rgba(63, 98, 18, 0.28);
+  --mint:          #2F6B52;
+  --mint-dim:      rgba(47, 107, 82, 0.12);
   --red:           #B42318;
   --red-dim:       rgba(180, 35, 24, 0.10);
-  --yellow:        #B45309;
-  --yellow-dim:    rgba(180, 83, 9, 0.10);
+  --yellow:        #8A6B2E;
+  --yellow-dim:    rgba(138, 107, 46, 0.10);
   --blue:          #0369A1;
   --blue-dim:      rgba(3, 105, 161, 0.10);
   --cyan:          #0369A1;
   --cyan-dim:      rgba(3, 105, 161, 0.10);
-  --amber:         #B45309;
-  --amber-dim:     rgba(180, 83, 9, 0.10);
+  --amber:         #8A6B2E;
+  --amber-dim:     rgba(138, 107, 46, 0.10);
   --sky:           #0369A1;
   --sky-dim:       rgba(3, 105, 161, 0.10);
 
   /* Text */
-  --text:          #202322;
-  --text-strong:   #202322;
+  --text:          #101310;
+  --text-strong:   #101310;
   --text-muted:    #4A524D;
   --text-soft:     #6B746E;
   --text-accent:   #3F6212;
 
   /* Shadows */
-  --shadow-sm:     0 1px 3px rgba(32,35,34,0.08);
-  --shadow-md:     0 4px 16px rgba(32,35,34,0.10);
-  --shadow-lg:     0 8px 32px rgba(32,35,34,0.12);
+  --shadow-sm:     0 1px 3px rgba(16,19,16,0.08);
+  --shadow-md:     0 4px 16px rgba(16,19,16,0.10);
+  --shadow-lg:     0 8px 32px rgba(16,19,16,0.12);
   --shadow-accent: 0 0 0 3px rgba(63, 98, 18, 0.16);
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { PathRoute, PersistentTunnel, Project, ShareAccess } from '../../lib/api'
+import type { PathRoute, PersistentTunnel, PreviewNote, Project, ShareAccess } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, extraRoutes, isGatedType, shareAccess, shareAddress, shareLabel, shareStatus, shareUrl } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
 import { PreviewSetting, ShareFeedback } from '../dashboard/ShareExtras'
@@ -32,6 +32,7 @@ export type ShareControls = {
   clientId: string
   onTunnelUpdated: (tunnel: PersistentTunnel) => void
   onOpenReview?: (tunnel: PersistentTunnel) => void
+  onOpenNote?: (tunnel: PersistentTunnel, note: PreviewNote) => void
 }
 
 type Notes = ReturnType<typeof usePreviewNotes>
@@ -174,7 +175,7 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
   const {
     tunnel, onClose, isBusy, clientId, onRenameTunnel, persistentTunnels, projects, onMoveShare,
     portInput, setPortInput, onPortSubmit, portListening, routeRules, onRouteRulesChange, routePortStatus,
-    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, onOpenReview, feedback,
+    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, onOpenReview, onOpenNote, feedback,
   } = props
   const sharingAddress = tunnel.subdomain
     ? persistentTunnels.filter(other => other.id !== tunnel.id && other.subdomain === tunnel.subdomain)
@@ -369,6 +370,7 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
                 onStatus={(note, next) => void feedback.setStatus(note, next)}
                 onDelete={note => void feedback.remove(note)}
                 onOpenReview={onOpenReview ? () => { onClose(); onOpenReview(tunnel) } : undefined}
+                onOpenNote={onOpenNote ? (note) => { onClose(); onOpenNote(tunnel, note) } : undefined}
               />
             </>
           )}

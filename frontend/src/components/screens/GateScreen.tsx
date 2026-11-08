@@ -5,7 +5,6 @@ type GateScreenProps = {
   onSkip: () => void
   verifying: boolean
   code?: string | null
-  theme: 'light' | 'dark'
 }
 
 const GoogleMark = () => (
@@ -17,14 +16,12 @@ const GoogleMark = () => (
   </svg>
 )
 
-export default function GateScreen({ onLogin, onSkip, verifying, code, theme }: GateScreenProps) {
+export default function GateScreen({ onLogin, onSkip, verifying, code }: GateScreenProps) {
   return (
     <div className="ps-splash">
       <div aria-hidden="true" style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: theme === 'dark'
-          ? 'radial-gradient(ellipse 60% 50% at 50% 40%, rgba(198,243,107,0.06) 0%, transparent 70%)'
-          : 'radial-gradient(ellipse 60% 50% at 50% 40%, rgba(63,98,18,0.05) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse 60% 50% at 50% 40%, rgba(182,243,107,0.08) 0%, transparent 70%)',
       }} />
 
       <div className="animate-gate-card ps-gate-card">
@@ -36,7 +33,7 @@ export default function GateScreen({ onLogin, onSkip, verifying, code, theme }: 
         <p className="animate-gate-line-2 ps-gate-text">
           {verifying
             ? 'Finish signing in with Google in your browser. This window updates on its own.'
-            : 'Share the app you’re building with a link, get feedback, and share the fix.'}
+            : 'Review unfinished work with your team — pin feedback on the live build and keep the same preview while you fix.'}
         </p>
         {verifying && code && <div className="ps-gate-code" aria-label="Sign-in code">{code}</div>}
 

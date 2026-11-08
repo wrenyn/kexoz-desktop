@@ -54,7 +54,7 @@ export default function Sidebar({ activePage, onNavigate, onNewShare, session, l
 
       <div className="ps-sidebar-cta">
         <button type="button" className="ps-btn ps-btn-primary ps-sidebar-new" onClick={onNewShare}>
-          New share
+          New preview
         </button>
       </div>
 

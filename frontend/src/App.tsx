@@ -124,13 +124,14 @@ export default function App() {
   const [bytesIn, setBytesIn] = useState(0)
   const [bytesOut, setBytesOut] = useState(0)
   const [dailyUsage, setDailyUsage] = useState<import('./lib/api').UsagePoint[]>([])
-  const { theme, toggleTheme } = useTheme()
+  useTheme()
   const { requestLog, totalRequests, retention, setRetention, addLogEntry, clearLog } = useRequestLog()
   const projectsApi = useProjects(session?.id)
   const { confirm, dialog: confirmDialog } = useConfirm()
   const { events: connectionEvents, record: recordConnection } = useConnectionHistory()
   const openFeedback = useOpenFeedback(session?.id)
   const [reviewTunnelId, setReviewTunnelId] = useState<string | null>(() => window.localStorage.getItem('kexoz-review-share'))
+  const [reviewNoteId, setReviewNoteId] = useState<string | null>(null)
 
   useEffect(() => {
     if (reviewTunnelId) window.localStorage.setItem('kexoz-review-share', reviewTunnelId)
@@ -985,7 +986,8 @@ export default function App() {
     onRenameTunnel: (tunnel, name) => void renameTunnel(tunnel, name),
     clientId,
     onTunnelUpdated: handleTunnelUpdated,
-    onOpenReview: tunnel => { setReviewTunnelId(tunnel.id); setActivePage('review') },
+    onOpenReview: tunnel => { setReviewNoteId(null); setReviewTunnelId(tunnel.id); setActivePage('review') },
+    onOpenNote: (tunnel, note) => { setReviewTunnelId(tunnel.id); setReviewNoteId(note.id); setActivePage('review') },
   })
 
   const handleLogout = async () => {
@@ -1047,7 +1049,6 @@ export default function App() {
             onSkip={skipGate}
             verifying={verifying}
             code={signInCode}
-            theme={theme}
           />
         )}
 
@@ -1081,6 +1082,7 @@ export default function App() {
             {activePage === 'projects' && (
               <ProjectsPage
                 {...shareControls(session.id)}
+                clientId={session.id}
                 projects={projectsApi.projects}
                 projectsLoaded={projectsApi.loaded}
                 openId={openProjectId}
@@ -1113,6 +1115,8 @@ export default function App() {
                 tunnels={persistentTunnels}
                 selectedId={reviewTunnelId}
                 onSelect={setReviewTunnelId}
+                focusNoteId={reviewNoteId}
+                onFocusNoteHandled={() => setReviewNoteId(null)}
               />
             )}
 
@@ -1142,8 +1146,6 @@ export default function App() {
 
             {activePage === 'settings' && (
               <SettingsPage
-                theme={theme}
-                onToggleTheme={toggleTheme}
                 session={session}
                 onVerify={() => void startGoogleVerify()}
                 verifying={verifying}

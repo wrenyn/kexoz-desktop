@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
-import { createReviewLink, type PersistentTunnel, type PreviewNote, type PreviewRevision } from '../../lib/api'
+import { createReviewLink, reviewWorkspaceUrl, type PersistentTunnel, type PreviewNote, type PreviewRevision } from '../../lib/api'
 import { createIssueForNote, githubAvailable, githubStatus, repoForShare, setRepoForShare, type GitHubStatus } from '../../lib/github'
+import { createLinearIssueForNote, linearAvailable, linearStatus, setTeamForShare, teamForShare, type LinearStatus } from '../../lib/linear'
 import { noteColors } from '../../lib/noteColors'
 import { afterShot, approvalSummary, latestDecisions, revisionName, timeAgo } from '../../lib/review'
 import { isGatedType, shareLabel, shareUrl } from '../../lib/shares'
@@ -11,6 +12,7 @@ import { notesChanged } from '../../hooks/useOpenFeedback'
 import { useReview } from '../../hooks/useReview'
 import CompareView, { type CompareSide } from '../review/CompareView'
 import GitHubModal from '../review/GitHubModal'
+import LinearModal from '../review/LinearModal'
 import NoteThread from '../review/NoteThread'
 import RevisionModal from '../review/RevisionModal'
 import Snapshot from '../review/Snapshot'
@@ -30,9 +32,11 @@ type Props = {
   tunnels: PersistentTunnel[]
   selectedId: string | null
   onSelect: (tunnelId: string) => void
+  focusNoteId?: string | null
+  onFocusNoteHandled?: () => void
 }
 
-export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: Props) {
+export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, focusNoteId, onFocusNoteHandled }: Props) {
   const shares = useMemo(() => tunnels.filter(tunnel => isGatedType(tunnel.tunnelType)), [tunnels])
   const tunnel = shares.find(item => item.id === selectedId) ?? shares[0] ?? null
   const review = useReview(clientId, tunnel?.id ?? null)
@@ -40,19 +44,41 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
   const { confirm, dialog } = useConfirm()
   const [tab, setTab] = useState<Tab>('feedback')
   const [filter, setFilter] = useState<Filter>('open')
-  const [modal, setModal] = useState<{ kind: 'revision'; revision?: PreviewRevision } | { kind: 'github' } | null>(null)
+  const [modal, setModal] = useState<{ kind: 'revision'; revision?: PreviewRevision } | { kind: 'github' } | { kind: 'linear' } | null>(null)
   const [viewing, setViewing] = useState<PreviewNote | null>(null)
   const [opening, setOpening] = useState(false)
   const [gh, setGh] = useState<GitHubStatus>({ connected: false, login: '', encrypted: false })
   const [repo, setRepo] = useState('')
+  const [ln, setLn] = useState<LinearStatus>({ connected: false, name: '', encrypted: false })
+  const [teamId, setTeamId] = useState('')
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
 
   useEffect(() => {
     if (githubAvailable()) githubStatus().then(setGh).catch(() => {})
+    if (linearAvailable()) linearStatus().then(setLn).catch(() => {})
   }, [])
 
   useEffect(() => { setRepo(tunnel ? repoForShare(tunnel.id) : '') }, [tunnel])
+  useEffect(() => { setTeamId(tunnel ? teamForShare(tunnel.id) : '') }, [tunnel])
+
+  useEffect(() => {
+    if (!focusNoteId || !loaded) return
+    const note = notes.find(item => item.id === focusNoteId)
+    if (!note) {
+      onFocusNoteHandled?.()
+      return
+    }
+    setTab('feedback')
+    setFilter(note.status === 'resolved' ? 'resolved' : note.status === 'in_progress' ? 'in_progress' : 'open')
+    setActiveNoteId(focusNoteId)
+    onFocusNoteHandled?.()
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-note-id="${focusNoteId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [focusNoteId, loaded, notes, onFocusNoteHandled])
 
   const github = { ready: gh.connected, repo }
+  const linear = { ready: ln.connected, teamId }
   const colors = useMemo(() => noteColors(notes), [notes])
   const numbers = useMemo(() => {
     const order = [...notes].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -81,10 +107,12 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
     }
   }
 
-  const createIssue = async (note: PreviewNote) => {
-    if (!tunnel || !repo) return
+  const createIssue = async (note: PreviewNote, provider: 'github' | 'linear') => {
+    if (!tunnel) return
     try {
-      const url = await createIssueForNote(repo, tunnel, note)
+      const url = provider === 'linear'
+        ? await createLinearIssueForNote(teamId, tunnel, note)
+        : await createIssueForNote(repo, tunnel, note)
       if (await review.linkIssue(note, url)) toast.success('Issue created')
     } catch (err) {
       toast.error(extractError(err))
@@ -111,6 +139,12 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
     setRepo(repoForShare(tunnel.id))
   }
 
+  const saveTeam = (next: string) => {
+    if (!tunnel) return
+    setTeamForShare(tunnel.id, next)
+    setTeamId(teamForShare(tunnel.id))
+  }
+
   const closeModal = useCallback(() => setModal(null), [])
 
   if (!tunnel) {
@@ -119,7 +153,7 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
         <div className="ps-page-header animate-fade-down">
           <div>
             <h1 className="ps-page-title">Review</h1>
-            <p className="ps-page-subtitle">Feedback, revisions and approvals for your previews</p>
+            <p className="ps-page-subtitle">Pinned notes, revisions, and approvals on live previews</p>
           </div>
         </div>
         <div className="ps-page-content animate-fade-up">
@@ -156,9 +190,17 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
               {gh.connected ? (repo || 'Pick a repository') : 'Connect GitHub'}
             </button>
           )}
+          {linearAvailable() && (
+            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setModal({ kind: 'linear' })}>
+              {ln.connected ? (teamId ? 'Linear connected' : 'Pick a Linear team') : 'Connect Linear'}
+            </button>
+          )}
           <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void openAsOwner()} disabled={opening || !tunnel.preview}>
             {opening ? 'Opening…' : 'Open as owner'}
           </button>
+          <a className="ps-btn ps-btn-ghost ps-btn-sm" href={reviewWorkspaceUrl(clientId)} target="_blank" rel="noreferrer">
+            Team board
+          </a>
           <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => setModal({ kind: 'revision' })}>New revision</button>
         </div>
       </div>
@@ -211,11 +253,23 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
                     revisions={revisions}
                     busy={busyId === note.id}
                     github={github}
-                    onAct={(action, options) => review.act(note, action, options)}
+                    linear={linear}
+                    focused={activeNoteId === note.id}
+                    onAct={async (action, options) => {
+                      const ok = await review.act(note, action, options)
+                      // Keep the note visible after status changes — the default
+                      // Open filter would hide it and feel like the click did nothing.
+                      if (ok) {
+                        if (action === 'start') setFilter('in_progress')
+                        else if (action === 'resolve') setFilter('resolved')
+                        else if (action === 'reopen') setFilter('open')
+                      }
+                      return ok
+                    }}
                     onReply={body => review.reply(note, body)}
                     onDeleteReply={replyId => void review.removeReply(note, replyId)}
                     onDelete={() => void removeNote(note)}
-                    onCreateIssue={() => void createIssue(note)}
+                    onCreateIssue={provider => void createIssue(note, provider)}
                     onLinkIssue={url => review.linkIssue(note, url)}
                     onCompare={() => setViewing(note)}
                   />
@@ -246,12 +300,16 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect }: 
           notes={notes}
           revision={modal.revision}
           github={github}
+          linear={linear}
           onClose={closeModal}
           onSaved={() => { void review.refresh(); notesChanged() }}
         />
       )}
       {modal?.kind === 'github' && (
         <GitHubModal status={gh} repo={repo} shareName={shareLabel(tunnel)} onStatus={setGh} onRepo={saveRepo} onClose={closeModal} />
+      )}
+      {modal?.kind === 'linear' && (
+        <LinearModal status={ln} teamId={teamId} shareName={shareLabel(tunnel)} onStatus={setLn} onTeam={saveTeam} onClose={closeModal} />
       )}
       {viewing && (viewingBefore || viewingAfter) && (
         <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setViewing(null) }}>

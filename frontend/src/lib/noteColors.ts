@@ -2,7 +2,7 @@ import type { PreviewNote } from './api'
 
 // Same colours and order as the overlay on the page (server preview_script.go),
 // so a person has one colour everywhere.
-const OWNER_COLOR = '#C6F36B'
+const OWNER_COLOR = '#B6F36B'
 const RESOLVED_COLOR = '#A7B0A9'
 const PALETTE = ['#7AB8FF', '#FF8FB1', '#FFC470', '#B79CFF', '#5EE0D0', '#FF9E6B', '#F2E57A', '#E59CFF', '#9FD4FF']
 

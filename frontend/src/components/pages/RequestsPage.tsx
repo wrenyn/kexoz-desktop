@@ -339,7 +339,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
           <p className="ps-page-subtitle">
             {hasRequests
               ? `${displayLog.length} of ${hostLog.length} shown`
-              : hosts.length > 1 ? 'Live traffic coming through your links' : 'Live traffic coming through your link'}
+              : hosts.length > 1 ? 'Live requests through your previews' : 'Live requests through your preview'}
           </p>
         </div>
         <div className="ps-header-actions">
