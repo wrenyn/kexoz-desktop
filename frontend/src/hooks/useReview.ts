@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
-  changePreviewNote, deletePreviewNote, deleteReply, deleteRevision, listPreviewNotes, listRevisions, replyToNote, setNoteIssue,
+  changePreviewNote, deletePreviewNote, deleteReply, deleteRevision, listPreviewNotes, listRevisions, replyToNote, setNoteAssignee, setNoteIssue,
   type NoteAction, type PreviewNote, type PreviewRevision,
 } from '../lib/api'
 import { extractError } from '../lib/utils'
@@ -21,6 +21,7 @@ export function useReview(clientId: string, tunnelId: string | null) {
   const [notes, setNotes] = useState<PreviewNote[]>([])
   const [revisions, setRevisions] = useState<PreviewRevision[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const current = useRef(tunnelId)
   current.current = tunnelId
@@ -28,12 +29,20 @@ export function useReview(clientId: string, tunnelId: string | null) {
   const refresh = useCallback(async () => {
     if (!tunnelId) return
     try {
-      const [nextNotes, nextRevisions] = await Promise.all([listPreviewNotes(clientId, tunnelId), listRevisions(clientId, tunnelId)])
-      if (current.current !== tunnelId) return
-      setNotes(nextNotes.map(note => ({ ...note, replies: note.replies ?? [] })))
-      setRevisions(nextRevisions.map(normalizeRevision))
+      if (tunnelId === 'all') {
+        const nextNotes = await listPreviewNotes(clientId)
+        if (current.current !== tunnelId) return
+        setNotes(nextNotes.map(note => ({ ...note, replies: note.replies ?? [] })))
+        setRevisions([])
+      } else {
+        const [nextNotes, nextRevisions] = await Promise.all([listPreviewNotes(clientId, tunnelId), listRevisions(clientId, tunnelId)])
+        if (current.current !== tunnelId) return
+        setNotes(nextNotes.map(note => ({ ...note, replies: note.replies ?? [] })))
+        setRevisions(nextRevisions.map(normalizeRevision))
+      }
+      setError('')
     } catch {
-      // Keep what we have; the next poll retries.
+      if (current.current === tunnelId) setError('Feedback couldn’t be refreshed. Check your connection and try again.')
     } finally {
       if (current.current === tunnelId) setLoaded(true)
     }
@@ -43,6 +52,7 @@ export function useReview(clientId: string, tunnelId: string | null) {
     setNotes([])
     setRevisions([])
     setLoaded(false)
+    setError('')
     void refresh()
     const id = window.setInterval(() => { if (!document.hidden) void refresh() }, POLL_MS)
     return () => window.clearInterval(id)
@@ -69,7 +79,9 @@ export function useReview(clientId: string, tunnelId: string | null) {
     run(note.id, async () => {
       const updated = await changePreviewNote(clientId, note.id, action, options)
       if (updated) replace(updated)
-      if (action === 'resolve') void refresh()
+      if (action === 'resolve') {
+        void refresh()
+      }
     })
 
   const reply = (note: PreviewNote, body: string) =>
@@ -93,6 +105,9 @@ export function useReview(clientId: string, tunnelId: string | null) {
   const linkIssue = (note: PreviewNote, url: string) =>
     run(note.id, async () => { replace(await setNoteIssue(clientId, note.id, url)) })
 
+  const assign = (note: PreviewNote, email: string) =>
+    run(note.id, async () => { replace(await setNoteAssignee(clientId, note.id, email)) })
+
   const removeRevision = (revision: PreviewRevision) =>
     run(revision.id, async () => {
       if (!tunnelId) return
@@ -100,5 +115,5 @@ export function useReview(clientId: string, tunnelId: string | null) {
       await refresh()
     })
 
-  return { notes, revisions, loaded, busyId, refresh, act, reply, removeReply, removeNote, linkIssue, removeRevision, setRevisions }
+  return { notes, revisions, loaded, error, busyId, refresh, act, reply, removeReply, removeNote, linkIssue, assign, removeRevision, setRevisions }
 }

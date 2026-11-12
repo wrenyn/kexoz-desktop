@@ -1,3 +1,4 @@
+import ModalOverlay from '../ui/ModalOverlay'
 import { useDialog } from '../../hooks/useDialog'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
@@ -49,6 +50,8 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
     try {
       await disconnectLinear()
       onStatus({ connected: false, name: '', encrypted: false })
+    } catch (err) {
+      toast.error(extractError(err))
     } finally {
       setBusy(false)
     }
@@ -58,7 +61,7 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
   const teamOk = cleanDraft === '' || validTeamId(cleanDraft)
 
   return (
-    <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <ModalOverlay onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
       <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="ln-title">
         <div className="ps-modal-header">
           <h2 className="ps-modal-title" id="ln-title">Linear</h2>
@@ -99,17 +102,17 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
               ) : (
                 <input id="ln-team" className="ps-input" value={teamDraft} onChange={event => setTeamDraft(event.target.value)} placeholder="Team UUID" spellCheck={false} />
               )}
-              {!teamOk && <p className="field-help" style={{ color: 'var(--ps-danger)' }}>Pick a Linear team.</p>}
+              {!teamOk && <p className="field-help" style={{ color: 'var(--red)' }}>Pick a Linear team.</p>}
             </div>
           )}
         </div>
         <div className="ps-modal-footer">
-          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
           {status.connected && (
             <button
               type="button"
               className="ps-btn ps-btn-primary"
-              disabled={!teamOk}
+              disabled={busy || !teamOk}
               onClick={() => {
                 onTeam(cleanDraft)
                 onClose()
@@ -120,6 +123,6 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

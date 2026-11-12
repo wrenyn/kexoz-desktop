@@ -1,90 +1,78 @@
+import { useState } from 'react'
 import type { PathRoute } from '../../lib/api'
 import { routeError } from '../../lib/shares'
 
 type Props = {
-  /** Routes other than /; / always goes to the share's own port. */
   rules: PathRoute[]
   onChange: (rules: PathRoute[]) => void
   fallbackPort: number | null
   portStatus?: Record<number, boolean | null>
-}
-
-const SUGGESTED_PATHS = ['/api', '/auth', '/ws', '/admin']
-
-function PortStatus({ port, status }: { port: number; status?: Record<number, boolean | null> }) {
-  if (!status) return null
-  const value = status[port]
-  return (
-    <span className={`ps-route-port-status ${value === true ? 'listening' : value === false ? 'offline' : ''}`}>
-      {value === true ? 'Running' : value === false ? 'Not running' : 'Checking'}
-    </span>
-  )
+  compact?: boolean
 }
 
 export default function RouteRulesEditor({ rules, onChange, fallbackPort, portStatus }: Props) {
-  const addRule = () => {
-    const used = new Set(rules.map(rule => rule.path.trim()))
-    const path = SUGGESTED_PATHS.find(candidate => !used.has(candidate)) ?? ''
-    onChange([...rules, { path, port: 8080 }])
+  const [path, setPath] = useState('/api')
+  const [port, setPort] = useState('8080')
+
+  const add = () => {
+    const nextPort = Number(port)
+    const nextPath = path.trim().startsWith('/') ? path.trim() : `/${path.trim()}`
+    if (!nextPath || nextPath === '/' || !Number.isInteger(nextPort) || nextPort < 1 || nextPort > 65535) return
+    if (rules.some(rule => rule.path === nextPath)) return
+    onChange([...rules, { path: nextPath, port: nextPort }])
+    setPath('/api')
+    setPort('8080')
   }
-  const update = (index: number, next: PathRoute) => onChange(rules.map((rule, itemIndex) => itemIndex === index ? next : rule))
 
   return (
-    <div className="ps-route-rules">
-      <div className="ps-route-rules-head">
-        <div className="ps-settings-row-desc">
-          One link for your whole app: send paths like /api to your backend and everything else to your frontend.
-        </div>
-        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={addRule}>Add path</button>
+    <div className="ps-route-rules is-compact">
+      <div className="ps-route-add">
+        <input
+          className="ps-input ps-input-mono"
+          value={path}
+          placeholder="/api"
+          aria-label="Path"
+          onChange={event => setPath(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }}
+        />
+        <span className="ps-input-prefix">localhost:</span>
+        <input
+          className="ps-input ps-input-mono"
+          type="number"
+          min={1}
+          max={65535}
+          value={port}
+          placeholder="8080"
+          aria-label="Backend port"
+          onChange={event => setPort(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }}
+        />
+        <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={add}>Add</button>
       </div>
+
       {rules.map((rule, index) => {
         const error = routeError(rule, rules.filter((_, itemIndex) => itemIndex !== index))
+        const listening = portStatus?.[rule.port]
         return (
-          <div key={index} className="ps-route-rule-wrap">
-            <div className="ps-route-rule">
-              <div className="ps-route-path">
-                <input
-                  className="ps-input ps-input-mono"
-                  value={rule.path}
-                  placeholder="/api"
-                  aria-label="Path"
-                  aria-invalid={Boolean(error)}
-                  onChange={event => update(index, { ...rule, path: event.target.value })}
-                />
-              </div>
-              <span className="ps-input-prefix">localhost:</span>
-              <input
-                className="ps-input ps-input-mono"
-                type="number"
-                min={1}
-                max={65535}
-                value={rule.port || ''}
-                placeholder="8080"
-                aria-label={`Port for ${rule.path || 'this path'}`}
-                onChange={event => update(index, { ...rule, port: Number(event.target.value) })}
-              />
-              <PortStatus port={rule.port} status={portStatus} />
-              <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
-            </div>
-            {error && <span className="ps-route-error">{error}</span>}
+          <div key={`${rule.path}-${index}`} className="ps-route-chip-row">
+            <code className="ps-route-chip">{rule.path} → :{rule.port}</code>
+            {listening === true ? <span className="ps-route-port-status listening">Up</span> : null}
+            {listening === false ? <span className="ps-route-port-status offline">Down</span> : null}
+            <button
+              type="button"
+              className="ps-btn ps-btn-ghost ps-btn-sm"
+              onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}
+            >
+              Remove
+            </button>
+            {error ? <span className="ps-route-error">{error}</span> : null}
           </div>
         )
       })}
-      <div className="ps-route-rule ps-route-rule-fixed">
-        <div className="ps-route-path">
-          <input className="ps-input ps-input-mono" value="/" readOnly aria-label="Every other path" tabIndex={-1} />
-          <span className="ps-route-fallback">Everything else</span>
-        </div>
-        <span className="ps-input-prefix">localhost:</span>
-        <input className="ps-input ps-input-mono" value={fallbackPort ?? ''} readOnly aria-label="The share's port" tabIndex={-1} />
-        {fallbackPort ? <PortStatus port={fallbackPort} status={portStatus} /> : <span />}
-        <span />
-      </div>
-      {rules.length > 0 && (
-        <p className="ps-panel-hint">
-          The longest matching path wins, so /api/v2 can go somewhere other than /api. Your backend gets the full path, including the prefix.
-        </p>
-      )}
+
+      <p className="ps-route-fallback-line">
+        / → localhost:{fallbackPort ?? '—'}
+      </p>
     </div>
   )
 }

@@ -17,9 +17,37 @@ export type ClientSession = {
   bandwidthUsed: number
   bandwidthLimit: number
   ownerEmail: string
+  displayName?: string
+  avatarUrl?: string
   pathRoutes: PathRoute[]
   /** Addresses (subdomains of ROOT_DOMAIN) this client owns. */
   domains: string[]
+}
+
+export type IntegrationProvider = 'slack' | 'discord' | 'teams' | 'google_chat' | 'jira' | 'linear' | 'github'
+export type WebhookIntegrationProvider = 'slack' | 'discord' | 'teams' | 'google_chat'
+
+export type IntegrationConfig = {
+  baseUrl?: string
+  email?: string
+  apiToken?: string
+  projectKey?: string
+  teamId?: string
+  hasApiToken?: boolean
+  repo?: string
+}
+
+/** @deprecated Prefer IntegrationConfig */
+export type JiraIntegrationConfig = IntegrationConfig
+
+export type WorkspaceIntegration = {
+  provider: IntegrationProvider
+  webhookUrl?: string
+  events: string[]
+  enabled: boolean
+  hasWebhook: boolean
+  updatedAt?: string
+  config?: IntegrationConfig
 }
 
 export type IdentityResponse = {
@@ -408,6 +436,12 @@ export type PreviewNote = {
   replies?: PreviewReply[]
   device?: NoteDevice
   issueUrl?: string
+  /** "capture" from the extension; "preview" from pinned notes. */
+  source?: 'capture' | 'preview' | string
+  title?: string
+  category?: string
+  anchorType?: string
+  assigneeEmail?: string
 }
 
 export type RevisionLink = { url: string; label: string; kind: 'pull' | 'commit' | 'issue' | 'link' }
@@ -446,6 +480,107 @@ export const listPreviewNotes = async (clientId: string, tunnelId?: string): Pro
   return data.notes ?? []
 }
 
+const feedbackTimeout = { timeout: 20_000 }
+
+export type FeedbackAttachment = {
+  id: string
+  kind?: string
+  mimeType?: string
+  url?: string
+  fileName?: string
+  durationMs?: number
+}
+
+export type FeedbackTimelineEvent = {
+  id?: string
+  type?: string
+  tMs?: number
+  payload?: Record<string, unknown>
+}
+
+export type FeedbackDetail = {
+  attachments: FeedbackAttachment[]
+  timeline: FeedbackTimelineEvent[]
+  recording?: { url?: string; attachmentId?: string; durationMs?: number } | null
+  steps: string[]
+  sourceUrl?: string
+  title?: string
+  summary?: string
+}
+
+export const getFeedbackDetail = async (clientId: string, noteId: string): Promise<FeedbackDetail> => {
+  const { data } = await axios.get<FeedbackDetail>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}`,
+    { params: { clientId }, ...feedbackTimeout },
+  )
+  return {
+    attachments: data.attachments ?? [],
+    timeline: data.timeline ?? [],
+    recording: data.recording ?? null,
+    steps: data.steps ?? [],
+    sourceUrl: data.sourceUrl,
+    title: data.title,
+    summary: data.summary,
+  }
+}
+
+const attachmentUrls = new Map<string, Promise<string>>()
+
+/** Object URL for Capture media; authenticated like snapshots. */
+export const attachmentObjectUrl = (clientId: string, attachmentId: string): Promise<string> => {
+  let pending = attachmentUrls.get(attachmentId)
+  if (!pending) {
+    pending = axios.get<Blob>(
+      `${API_BASE_URL}/client/attachments/${encodeURIComponent(attachmentId)}`,
+      { params: { clientId }, responseType: 'blob' },
+    ).then(({ data }) => URL.createObjectURL(data))
+    pending.catch(() => attachmentUrls.delete(attachmentId))
+    attachmentUrls.set(attachmentId, pending)
+  }
+  return pending
+}
+
+/** Guest Capture invite token bound to one share (paste into the extension). */
+export const createCaptureInvite = async (
+  clientId: string,
+  tunnelId: string,
+  options: { days?: 1 | 7 | 14 } = {},
+): Promise<{ token: string; expiresAt: string; days: number; url?: string }> => {
+  const days = options.days ?? 14
+  const { data } = await axios.post<{ token: string; expiresAt: string; days?: number; url?: string }>(
+    `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/capture-invite`,
+    { clientId, days },
+    { params: { clientId, days }, ...feedbackTimeout },
+  )
+  return { token: data.token, expiresAt: data.expiresAt, days: data.days ?? days, url: data.url }
+}
+
+export type CaptureInvite = {
+  id: string
+  tokenHint: string
+  label: string
+  expiresAt: string
+  revoked: boolean
+  status: 'active' | 'expired' | 'revoked' | string
+  createdAt: string
+  lastUsedAt?: string
+}
+
+export const listCaptureInvites = async (clientId: string, tunnelId: string): Promise<CaptureInvite[]> => {
+  const { data } = await axios.get<{ invites: CaptureInvite[] | null }>(
+    `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/capture-invites`,
+    { params: { clientId }, ...feedbackTimeout },
+  )
+  return data.invites ?? []
+}
+
+export const revokeCaptureInvite = async (clientId: string, tunnelId: string, token: string): Promise<void> => {
+  await axios.delete(
+    `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/capture-invites/${encodeURIComponent(token)}`,
+    { params: { clientId }, ...feedbackTimeout },
+  )
+}
+
 export type NoteAction = 'start' | 'resolve' | 'reopen'
 
 const ACTION_FOR_STATUS: Record<NoteStatus, NoteAction> = { open: 'reopen', in_progress: 'start', resolved: 'resolve' }
@@ -454,8 +589,6 @@ export const setPreviewNoteStatus = async (clientId: string, noteId: string, sta
   changePreviewNote(clientId, noteId, ACTION_FOR_STATUS[status])
 
 /** Starts, resolves or reopens a note; resolving can name the revision that fixed it. */
-const feedbackTimeout = { timeout: 20_000 }
-
 export const changePreviewNote = async (
   clientId: string, noteId: string, action: NoteAction, options: { revisionId?: string; comment?: string; author?: string } = {},
 ): Promise<PreviewNote | null> => {
@@ -488,6 +621,102 @@ export const deleteReply = async (clientId: string, noteId: string, replyId: str
 export const setNoteIssue = async (clientId: string, noteId: string, url: string): Promise<PreviewNote> => {
   const { data } = await axios.put<{ note: PreviewNote }>(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/issue`, { clientId, url }, { params: { clientId } })
   return data.note
+}
+
+export const setNoteAssignee = async (clientId: string, noteId: string, email: string): Promise<PreviewNote> => {
+  const { data } = await axios.put<{ note: PreviewNote }>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/assignee`,
+    { clientId, email },
+    { params: { clientId } },
+  )
+  return data.note
+}
+
+export const listWorkspaceMembers = async (clientId: string): Promise<string[]> => {
+  const { data } = await axios.get<{ members?: Array<{ email?: string; status?: string }> }>(
+    `${API_BASE_URL}/api/v1/workspaces/${encodeURIComponent(clientId)}/members`,
+    { params: { clientId }, headers: { 'X-Kexoz-Client-ID': clientId } },
+  )
+  return [...new Set((data.members ?? []).filter(item => item.email && item.status !== 'pending').map(item => String(item.email).toLowerCase()))]
+}
+
+export const createWorkspaceGithubIssue = async (clientId: string, noteId: string): Promise<string> => {
+  const { data } = await axios.post<{ issueUrl: string }>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/github-issue`,
+    { clientId },
+    { params: { clientId } },
+  )
+  if (!data.issueUrl) throw new Error('GitHub did not return an issue URL.')
+  return data.issueUrl
+}
+
+export type CaptureInstall = { storeUrl: string; storeReady: boolean }
+
+export const captureInstall = async (): Promise<CaptureInstall> => {
+  const { data } = await axios.get<CaptureInstall>(`${API_BASE_URL}/api/v1/capture/install`)
+  return { storeUrl: data.storeUrl || '', storeReady: Boolean(data.storeReady && data.storeUrl) }
+}
+
+export const listIntegrations = async (clientId: string): Promise<WorkspaceIntegration[]> => {
+  const { data } = await axios.get<{ integrations: WorkspaceIntegration[] }>(`${API_BASE_URL}/client/integrations`, { params: { clientId } })
+  return data.integrations ?? []
+}
+
+export const saveIntegration = async (
+  clientId: string,
+  provider: IntegrationProvider,
+  input: { webhookUrl?: string; events?: string[]; enabled?: boolean; config?: IntegrationConfig },
+): Promise<WorkspaceIntegration> => {
+  const { data } = await axios.put<WorkspaceIntegration>(
+    `${API_BASE_URL}/client/integrations/${provider}`,
+    { clientId, ...input },
+    { params: { clientId } },
+  )
+  return data
+}
+
+export const deleteIntegration = async (clientId: string, provider: IntegrationProvider): Promise<void> => {
+  await axios.delete(`${API_BASE_URL}/client/integrations/${provider}`, { params: { clientId } })
+}
+
+export const testIntegration = async (clientId: string, provider: IntegrationProvider): Promise<void> => {
+  await axios.post(`${API_BASE_URL}/client/integrations/${provider}/test`, { clientId }, { params: { clientId } })
+}
+
+export const updateClientProfile = async (
+  clientId: string,
+  input: { displayName: string; avatarUrl?: string },
+): Promise<{ displayName: string; avatarUrl?: string; email?: string }> => {
+  const { data } = await axios.put<{ displayName: string; avatarUrl?: string; email?: string }>(
+    `${API_BASE_URL}/client/profile`,
+    { clientId, ...input },
+    { params: { clientId } },
+  )
+  return data
+}
+
+export const fetchClientProfile = async (clientId: string): Promise<{
+  displayName?: string
+  avatarUrl?: string
+  email?: string
+  linked?: boolean
+}> => {
+  const { data } = await axios.get(`${API_BASE_URL}/client/profile`, { params: { clientId } })
+  return data
+}
+
+/** Public share URL for a feedback thread (anyone with the link can read it). */
+export const createFeedbackShareLink = async (clientId: string, noteId: string): Promise<{ url: string; token: string }> => {
+  const { data } = await axios.post<{ url: string; token: string }>(
+    `${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/share`,
+    { clientId },
+    { params: { clientId }, ...feedbackTimeout },
+  )
+  return { url: data.url, token: data.token }
+}
+
+export const revokeFeedbackShareLink = async (clientId: string, noteId: string): Promise<void> => {
+  await axios.delete(`${API_BASE_URL}/client/feedback/${encodeURIComponent(noteId)}/share`, { params: { clientId }, ...feedbackTimeout })
 }
 
 const revisionsUrl = (tunnelId: string) => `${API_BASE_URL}/client/tunnels/${encodeURIComponent(tunnelId)}/revisions`

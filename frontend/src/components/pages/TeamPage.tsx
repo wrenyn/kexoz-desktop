@@ -17,7 +17,8 @@ import { extractError } from '../../lib/utils'
 import LoadingBlock from '../ui/LoadingBlock'
 import Spinner from '../ui/Spinner'
 import PremiumEmpty from '../ui/PremiumEmpty'
-import TrustNote from '../ui/TrustNote'
+import LoadError from '../ui/LoadError'
+import { useConfirm } from '../../hooks/useConfirm'
 
 type Props = {
   session: ClientSession
@@ -51,22 +52,25 @@ export default function TeamPage({
   const [role, setRole] = useState<InviteUiRole>('developer')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const { confirm, dialog } = useConfirm()
 
   const refresh = useCallback(async () => {
-    const [nextMembers, nextShared] = await Promise.all([
-      listTeam(clientId),
-      listSharedWorkspaces(clientId),
-    ])
-    setMembers(nextMembers)
-    setShared(nextShared)
-    setLoaded(true)
+    setLoadError('')
+    try {
+      const [nextMembers, nextShared] = await Promise.all([listTeam(clientId), listSharedWorkspaces(clientId)])
+      setMembers(nextMembers)
+      setShared(nextShared)
+    } catch {
+      setLoadError('Your team couldn’t be loaded. Check your connection and try again.')
+    } finally {
+      setLoaded(true)
+    }
   }, [clientId])
 
   useEffect(() => {
-    let alive = true
-    refresh().catch(err => { if (alive) toast.error(extractError(err)) })
-    return () => { alive = false }
-  }, [refresh])
+    if (signedIn) void refresh()
+  }, [refresh, signedIn])
 
   const apiRole = INVITE_ROLES.find(item => item.value === role)?.api ?? 'developer'
 
@@ -111,6 +115,12 @@ export default function TeamPage({
   }
 
   const remove = async (member: TeamMember) => {
+    if (!(await confirm({
+      title: member.status === 'pending' ? 'Revoke this invitation?' : 'Remove this teammate?',
+      message: member.status === 'pending' ? `The invitation for ${member.email} will stop working.` : `${member.email} will lose access to this workspace. You can invite them again later.`,
+      confirmLabel: member.status === 'pending' ? 'Revoke invitation' : 'Remove teammate',
+      tone: 'danger',
+    }))) return
     setBusy(true)
     try {
       await revokeTeamMember(clientId, member.id)
@@ -128,17 +138,16 @@ export default function TeamPage({
 
   return (
     <div className="ps-main">
+      {dialog}
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Team</h1>
-          <p className="ps-page-subtitle">
-            Invite people and manage workspace access
-            {pending.length > 0 ? ` · ${pending.length} pending` : ''}
-          </p>
+          <p className="ps-page-subtitle">Invite teammates and manage access to your workspace.</p>
         </div>
       </div>
 
       <div className="ps-page-content">
+        {loadError && <LoadError message={loadError} onRetry={() => void refresh()} />}
         <div className="ps-settings-page animate-fade-up">
           <section className="ps-card ps-settings-section">
             <div className="ps-settings-section-title">Workspace owner</div>
@@ -148,7 +157,7 @@ export default function TeamPage({
                 <div className="ps-settings-row-desc">
                   {session.ownerEmail || 'Sign in to claim this workspace as owner.'}
                   {' · '}
-                  Full access; owners are not inviteable.
+                  The workspace owner has full access.
                 </div>
               </div>
               <span className="ps-badge ps-badge-mint">Owner</span>
@@ -157,15 +166,12 @@ export default function TeamPage({
 
           <section className="ps-card ps-settings-section">
             <div className="ps-settings-section-title">Invite teammates</div>
-            <p className="ps-settings-row-desc" style={{ marginBottom: 12 }}>
-              Teammates accept on the web, then can open shared workspaces from this app.
-            </p>
 
             {!signedIn ? (
               <div className="ps-settings-row">
                 <div className="ps-settings-row-info">
                   <div className="ps-settings-row-label">Sign in required</div>
-                  <div className="ps-settings-row-desc">Google sign-in is needed before you can invite people.</div>
+                  <div className="ps-settings-row-desc">Sign in to become the workspace owner and invite teammates.</div>
                 </div>
                 {gauthEnabled && (
                   <button type="button" className={`ps-btn ps-btn-secondary ps-btn-sm ${verifying ? 'is-loading' : ''}`} onClick={onVerify} disabled={verifying} aria-busy={verifying || undefined}>
@@ -176,8 +182,7 @@ export default function TeamPage({
             ) : (
               <>
                 <form
-                  className="ps-settings-row"
-                  style={{ alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}
+                  className="ps-team-invite-form"
                   onSubmit={event => { event.preventDefault(); void invite() }}
                 >
                   <div style={{ flex: '1 1 180px' }}>
@@ -190,6 +195,8 @@ export default function TeamPage({
                       onChange={event => setEmail(event.target.value)}
                       placeholder="teammate@company.com"
                       autoComplete="off"
+                      required
+                      disabled={busy}
                     />
                   </div>
                   <div>
@@ -198,6 +205,7 @@ export default function TeamPage({
                       id="team-role"
                       className="ps-select"
                       value={role}
+                      disabled={busy}
                       onChange={event => setRole(event.target.value as InviteUiRole)}
                     >
                       {INVITE_ROLES.map(item => (
@@ -205,24 +213,17 @@ export default function TeamPage({
                       ))}
                     </select>
                   </div>
-                  <button type="submit" className={`ps-btn ps-btn-primary ps-btn-sm ${busy ? 'is-loading' : ''}`} disabled={busy || !email.trim()}>
+                  <button type="submit" className={`ps-btn ps-btn-primary ps-btn-sm ${busy ? 'is-loading' : ''}`} disabled={busy || !loaded || !email.trim()}>
                     {busy ? <><Spinner size={13} /> Inviting</> : 'Invite'}
                   </button>
                 </form>
 
                 {!loaded ? (
                   <LoadingBlock label="Loading team" compact rows={3} />
-                ) : members.length === 0 ? (
-                  <>
-                    <PremiumEmpty title="No teammates yet">
-                      Invite someone above. Admins manage the workspace; members review and comment; guests see assigned work only.
-                    </PremiumEmpty>
-                    <TrustNote title="Invite links" tone="ok">
-                      Each invite creates a link you can copy and send. Links stay valid until revoked.
-                    </TrustNote>
-                  </>
+                ) : members.length === 0 && !loadError ? (
+                  <PremiumEmpty title="Your team starts here">Invite someone by email, then send them the invitation link. Choose a role that matches the access they need.</PremiumEmpty>
                 ) : (
-                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div className="ps-team-member-groups">
                     {pending.length > 0 && (
                       <MemberGroup title="Pending">
                         <MemberList
@@ -249,15 +250,23 @@ export default function TeamPage({
           {shared.length > 0 && (
             <section className="ps-card ps-settings-section">
               <div className="ps-settings-section-title">Shared with you</div>
-              <ul className="ps-share-notes" style={{ marginTop: 8 }}>
-                {shared.map(workspace => (
-                  <li key={workspace.ownerClientId}>
-                    <SharedRow
-                      email={workspace.ownerEmail || 'Teammate workspace'}
-                      role={teamRoleLabel(workspace.role)}
-                    />
-                  </li>
-                ))}
+              <ul className="ps-team-list" style={{ marginTop: 8 }}>
+                {shared.map(workspace => {
+                  const email = workspace.ownerEmail || 'Teammate workspace'
+                  const initial = (email.trim()[0] || '?').toUpperCase()
+                  return (
+                    <li key={workspace.ownerClientId} className="ps-team-row">
+                      <span className="ps-team-avatar" aria-hidden="true">{initial}</span>
+                      <div className="ps-team-info">
+                        <span className="ps-team-email">{email}</span>
+                        <span className="ps-team-meta">
+                          <span className="ps-badge ps-badge-gray">{teamRoleLabel(workspace.role)}</span>
+                          <span className="ps-team-status">Shared with you</span>
+                        </span>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             </section>
           )}
@@ -276,18 +285,6 @@ function MemberGroup({ title, children }: { title: string; children: ReactNode }
   )
 }
 
-function SharedRow({ email, role }: { email: string; role: string }) {
-  return (
-    <div className="ps-feedback-meta" style={{ justifyContent: 'space-between', width: '100%' }}>
-      <span>
-        <strong>{email}</strong>
-        {' · '}
-        {role}
-      </span>
-    </div>
-  )
-}
-
 function MemberList({
   members, busy, onResend, onCopyLink, onRemove, pending = false,
 }: {
@@ -299,22 +296,20 @@ function MemberList({
   pending?: boolean
 }) {
   return (
-    <ul className="ps-share-notes">
-      {members.map(member => (
-        <li key={member.id}>
-          <div className="ps-feedback-meta" style={{ justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
-            <span>
-              <strong>{member.email}</strong>
-              {' · '}
-              {teamRoleLabel(member.role)}
-              {!pending && (
-                <>
-                  {' · '}
-                  Active
-                </>
-              )}
-            </span>
-            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    <ul className="ps-team-list">
+      {members.map(member => {
+        const initial = (member.email?.trim()?.[0] || '?').toUpperCase()
+        return (
+          <li key={member.id} className={`ps-team-row${pending ? ' is-pending' : ''}`}>
+            <span className="ps-team-avatar" aria-hidden="true">{initial}</span>
+            <div className="ps-team-info">
+              <span className="ps-team-email">{member.email}</span>
+              <span className="ps-team-meta">
+                <span className="ps-badge ps-badge-gray">{teamRoleLabel(member.role)}</span>
+                {pending ? <span className="ps-team-status">Pending invite</span> : <span className="ps-team-status">Active</span>}
+              </span>
+            </div>
+            <div className="ps-team-actions">
               {pending && (
                 <>
                   <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={busy} onClick={() => onResend(member)}>
@@ -333,10 +328,10 @@ function MemberList({
               >
                 {pending ? 'Revoke' : 'Remove'}
               </button>
-            </span>
-          </div>
-        </li>
-      ))}
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 }

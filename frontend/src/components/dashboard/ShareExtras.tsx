@@ -4,7 +4,7 @@ import { createReviewLink, updateTunnel, type PersistentTunnel, type PreviewNote
 import { noteColors } from '../../lib/noteColors'
 import { shareUrl } from '../../lib/shares'
 import { extractError } from '../../lib/utils'
-import TrustNote from '../ui/TrustNote'
+import CaptureInviteDialog from '../review/CaptureInviteDialog'
 
 export function PreviewSetting({ clientId, tunnel, onUpdated }: {
   clientId: string
@@ -13,13 +13,14 @@ export function PreviewSetting({ clientId, tunnel, onUpdated }: {
 }) {
   const [saving, setSaving] = useState(false)
   const [opening, setOpening] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const enabled = Boolean(tunnel.preview)
 
   const toggle = async (next: boolean) => {
     setSaving(true)
     try {
       onUpdated(await updateTunnel(clientId, { ...tunnel, preview: next }))
-      toast.success(next ? 'Interactive preview is on. Visitors enter their name, then can pin notes.' : 'Interactive preview is off')
+      toast.success(next ? 'Notes on' : 'Notes off')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -42,31 +43,24 @@ export function PreviewSetting({ clientId, tunnel, onUpdated }: {
   return (
     <div className="ps-share-extra">
       <label className="ps-ns-toggle-row ps-share-extra-row">
-        <span className="ps-ns-toggle-text">
-          <span className="ps-ns-toggle-title">Interactive preview</span>
-          <span className="ps-ns-toggle-desc">Visitors enter their name once, then pin notes anywhere on the page.</span>
-        </span>
+        <span className="ps-ns-toggle-title">Notes</span>
         <span className="ps-toggle">
-          <input type="checkbox" aria-label="Interactive preview" checked={enabled} disabled={saving} onChange={event => void toggle(event.target.checked)} />
+          <input type="checkbox" aria-label="Notes" checked={enabled} disabled={saving} onChange={event => void toggle(event.target.checked)} />
           <span className="ps-toggle-track" />
         </span>
       </label>
-      {enabled && (
-        <div className="ps-preview-owner">
-          <span className="ps-panel-hint">
-            {tunnel.active
-              ? 'Open it yourself to resolve notes on the page. You skip the password.'
-              : 'Start the share to open it as the owner.'}
-          </span>
+      <div className="ps-preview-owner" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {enabled && (
           <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void openAsOwner()} disabled={opening || !tunnel.active}>
-            {opening ? 'Opening…' : 'Open as owner'}
+            {opening ? 'Opening…' : tunnel.active ? 'Open' : 'Start to open'}
           </button>
-        </div>
-      )}
-      {enabled && (
-        <TrustNote title="Why this exists" tone="ok">
-          Reviewers leave notes on the live page so feedback stays with the build — not lost in chat. Turn it off if you only need a plain share link.
-        </TrustNote>
+        )}
+        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setInviteOpen(true)}>
+          Invite…
+        </button>
+      </div>
+      {inviteOpen && (
+        <CaptureInviteDialog clientId={clientId} tunnel={tunnel} onClose={() => setInviteOpen(false)} />
       )}
     </div>
   )
@@ -122,7 +116,7 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpe
             </button>
           )}
           {onOpenReview && (
-            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onOpenReview}>Open review</button>
+            <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onOpenReview}>Open Feedback</button>
           )}
         </div>
       </div>
@@ -139,6 +133,8 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpe
                   {note.authorRole === 'owner' && <span className="ps-note-owner">Owner</span>}
                   · {timeAgo(note.createdAt)} ·{' '}
                   <a href={pageUrl(note.path)} target="_blank" rel="noreferrer" className="ps-share-note-path">{note.path || '/'}</a>
+                  {note.source === 'capture' && <span className="ps-source-label">CAPTURE</span>}
+                  {note.source === 'preview' && <span className="ps-source-label muted">PREVIEW</span>}
                   {note.status === 'in_progress' && <span className="ps-badge ps-badge-mint">In progress</span>}
                   {(note.replies?.length ?? 0) > 0 && <span className="ps-share-note-replies">{note.replies!.length} {note.replies!.length === 1 ? 'reply' : 'replies'}</span>}
                   {note.issueUrl && (

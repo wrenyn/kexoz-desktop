@@ -8,11 +8,14 @@ import ShareList, { type ShareControls } from '../shares/ShareList'
 import { useCopy } from '../../hooks/useCopy'
 import PremiumEmpty from '../ui/PremiumEmpty'
 import { PageSkeleton } from '../ui/LoadingBlock'
+import LoadError from '../ui/LoadError'
 
 type Props = ShareControls & {
   clientId: string
   projects: Project[]
   projectsLoaded: boolean
+  projectsError: string
+  onRetryProjects: () => void
   openId: string | null
   onOpenProject: (id: string | null) => void
   /** Opens the new share window for a project; routed starts with path routing on. */
@@ -112,13 +115,13 @@ function inEnvironment(project: Project, byId: Map<string, PersistentTunnel>, en
 function SetupChoices({ onSeparate, onRouted }: { onSeparate: () => void; onRouted: () => void }) {
   return (
     <div className="ps-ns-kinds ps-setup-choices">
-      <button type="button" className="ps-ns-kind" onClick={onRouted}>
-        <span className="ps-ns-kind-title">One link for the whole app</span>
-        <span className="ps-ns-kind-desc">Your frontend gets / and paths like /api go to your backend’s port. No CORS setup, one URL to send around.</span>
-      </button>
       <button type="button" className="ps-ns-kind" onClick={onSeparate}>
-        <span className="ps-ns-kind-title">A link per service</span>
-        <span className="ps-ns-kind-desc">Share your frontend, backend or anything else on its own address. Add each one to this project.</span>
+        <span className="ps-ns-kind-title">Separate links</span>
+        <span className="ps-ns-kind-desc">One URL per service. Best default.</span>
+      </button>
+      <button type="button" className="ps-ns-kind" onClick={onRouted}>
+        <span className="ps-ns-kind-title">One link</span>
+        <span className="ps-ns-kind-desc">Same host, paths to different ports.</span>
       </button>
     </div>
   )
@@ -184,6 +187,28 @@ export default function ProjectsPage(props: Props) {
     </>
   )
 
+  if (openId && !project) {
+    return (
+      <div className="ps-main">
+        <div className="ps-page-header animate-fade-down">
+          <div className="ps-page-heading">
+            <button type="button" className="ps-page-crumb" onClick={() => openProject(null)}>Projects</button>
+            <h1 className="ps-page-title">{projectsLoaded ? 'Not found' : 'Project'}</h1>
+          </div>
+        </div>
+        <div className="ps-page-content">
+          {projectsLoaded ? (
+            <div className="ps-card">
+              <PremiumEmpty title="Project not found" action={<button type="button" className="ps-btn ps-btn-secondary" onClick={() => openProject(null)}>Back</button>} />
+            </div>
+          ) : (
+            <PageSkeleton cards={3} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (project) {
     const all = summarize(project, byId).shares
     const environments = [...new Set(['', ...all.map(tunnel => tunnel.environment ?? '')])].sort()
@@ -200,25 +225,25 @@ export default function ProjectsPage(props: Props) {
               <h1 className="ps-page-title">{project.name}</h1>
               <ProjectStatus running={running} total={shares.length} />
             </div>
-            <p className="ps-page-subtitle">
-              {shares.length === 0 ? 'No shares yet' : `${shares.length} ${shares.length === 1 ? 'share' : 'shares'}`}
-              {env ? ` in ${env}` : ''}
-            </p>
           </div>
           <div className="ps-header-actions">
-            <a className="ps-btn ps-btn-ghost ps-btn-sm" href={reviewWorkspaceUrl(clientId, project.id)} target="_blank" rel="noreferrer">Team board</a>
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, true)}>Reuse version</button>
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, false)}>New version</button>
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)} disabled={editing}>Edit</button>
             <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => onNewShare(project.id, false, env)}>Add share</button>
             {runButtons(scoped, running, startable)}
+            <details className="ps-header-more">
+              <summary className="ps-btn ps-btn-ghost ps-btn-sm">More</summary>
+              <div className="ps-header-more-menu" role="menu">
+                <a role="menuitem" href={reviewWorkspaceUrl(clientId, project.id)} target="_blank" rel="noreferrer">Board</a>
+                <button type="button" role="menuitem" disabled={versionBusy} onClick={() => void cutVersion(project, false)}>New version</button>
+                <button type="button" role="menuitem" disabled={versionBusy} onClick={() => void cutVersion(project, true)}>Reuse version</button>
+                <button type="button" role="menuitem" onClick={() => setEditing(true)} disabled={editing}>Edit</button>
+              </div>
+            </details>
           </div>
         </div>
 
         <div className="ps-page-content ps-groups animate-fade-up">
           {shares.length > 0 && (
             <div className="ps-project-cli">
-              <span className="ps-project-cli-label">From a terminal</span>
               <code className="ps-project-cli-command">{command}</code>
               <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copy('command', command)}>
                 {copied === 'command' ? 'Copied' : 'Copy'}
@@ -297,7 +322,7 @@ export default function ProjectsPage(props: Props) {
             <div className="ps-card">
               <div className="ps-empty ps-empty-setup">
                 <span className="ps-empty-title">Put {project.name} online</span>
-                <span className="ps-empty-sub">Choose how the team reaches this build. You can mix modes and change them later.</span>
+                <span className="ps-empty-sub">Pick a layout. You can add either kind later.</span>
                 <SetupChoices onRouted={() => onNewShare(project.id, true)} onSeparate={() => onNewShare(project.id)} />
                 {loose.length > 0 && (
                   <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)}>Add shares you already have</button>
@@ -310,25 +335,17 @@ export default function ProjectsPage(props: Props) {
     )
   }
 
-  const liveCount = persistentTunnels.filter(tunnel => shareStatus(tunnel) === 'active').length
-  const overview = projects.length === 0
-    ? 'One project per app — frontend, API, and anything else on the stack, started together.'
-    : [
-        `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`,
-        `${persistentTunnels.length} ${persistentTunnels.length === 1 ? 'share' : 'shares'}`,
-        liveCount > 0 ? `${liveCount} running` : 'nothing running',
-      ].join(' · ')
-
   return (
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Projects</h1>
-          <p className="ps-page-subtitle">{overview}</p>
+          <p className="ps-page-subtitle">Keep related shares together and manage them in one place.</p>
         </div>
       </div>
 
       <div className="ps-page-content ps-groups animate-fade-up">
+        {props.projectsError && <LoadError message={props.projectsError} onRetry={props.onRetryProjects} />}
         {creating && (
           <ProjectEditor
             tunnels={loose}
@@ -373,7 +390,7 @@ export default function ProjectsPage(props: Props) {
                       {hidden > 0 && <li className="ps-project-card-more">{hidden} more</li>}
                     </ul>
                   ) : (
-                    <p className="ps-project-card-empty">Add your frontend, backend or anything else to start them together.</p>
+                    <p className="ps-project-card-empty">Empty</p>
                   )}
                   <div className="ps-project-card-foot">
                     <span className="ps-project-card-meta">{meta}</span>
@@ -389,18 +406,15 @@ export default function ProjectsPage(props: Props) {
             {!creating && (
               <button type="button" className="ps-project-card ps-project-card-new" onClick={() => setCreating(true)}>
                 <span className="ps-project-card-new-title">New project</span>
-                <span className="ps-project-card-new-sub">Group the frontend, backend and anything else one app needs.</span>
               </button>
             )}
           </div>
-        ) : !creating && (
+        ) : !creating && !props.projectsError && (
           <div className="ps-card">
             <PremiumEmpty
-              title="Start with a project"
+              title="Keep your app’s shares together"
               action={<button type="button" className="ps-btn ps-btn-primary" onClick={() => setCreating(true)}>New project</button>}
-            >
-              A project is one app you’re working on. Share a web frontend/backend, then review feedback together. Mobile preview is coming soon.
-            </PremiumEmpty>
+            >Group your frontend, API, and other services into a project. You can start and stop them together.</PremiumEmpty>
           </div>
         )}
 
@@ -408,11 +422,6 @@ export default function ProjectsPage(props: Props) {
           <section className="ps-project-section">
             <div className="ps-project-section-head">
               <h2 className="ps-project-section-title">Not in a project</h2>
-              <p className="ps-project-section-hint">
-                {projects.length > 0
-                  ? 'Open a share to move it into a project, so it starts with the rest of the app.'
-                  : 'Create a project to start these together with one click.'}
-              </p>
             </div>
             <ShareList {...props} tunnels={loose} projects={projects} onMoveShare={onMoveShare} />
           </section>

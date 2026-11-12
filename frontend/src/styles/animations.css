@@ -88,8 +88,8 @@
 }
 
 .animate-fade-in     { animation: fadeIn 0.2s var(--ease-out) both; }
-.animate-fade-up     { animation: fadeUp 0.3s var(--ease-out) both; }
-.animate-fade-down   { animation: fadeDown 0.2s var(--ease-out) both; }
+.animate-fade-up     { animation: fadeUp 0.26s var(--ease-out) both; }
+.animate-fade-down   { animation: fadeDown 0.18s var(--ease-out) both; }
 .animate-slide-left  { animation: slideInLeft 0.3s var(--ease-out) both; }
 .animate-slide-right { animation: slideInRight 0.3s var(--ease-out) both; }
 .animate-scale-in    { animation: scaleIn 0.25s var(--ease-spring) both; }

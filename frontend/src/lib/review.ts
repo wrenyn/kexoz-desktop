@@ -25,6 +25,11 @@ export type NoteBadge = { label: string; className: string }
 
 export function noteBadges(note: PreviewNote, revisions: PreviewRevision[]): NoteBadge[] {
   const badges: NoteBadge[] = []
+  if (note.source === 'capture') {
+    badges.push({ label: 'Capture', className: 'ps-badge-mint' })
+  } else if (note.source === 'preview') {
+    badges.push({ label: 'Preview', className: 'ps-badge-gray' })
+  }
   if (note.status === 'resolved') {
     const fixedIn = revisions.find(revision => revision.id === note.resolvedRevisionId)
     badges.push({ label: fixedIn ? `Fixed in v${fixedIn.number}` : 'Fixed', className: 'ps-badge-green' })

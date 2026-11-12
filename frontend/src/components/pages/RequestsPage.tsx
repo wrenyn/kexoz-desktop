@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ROOT_DOMAIN, type PersistentTunnel, type RequestLogEntry } from '../../lib/api'
 import { isNoiseRequestPath } from '../../lib/tunnel'
 import { redactBody, redactHeaders, redactPath } from '../../lib/redact'
 import { formatBody, formatTime, methodClass, statusClass } from '../../lib/httpView'
 import { portForPath } from '../../lib/shares'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import { PageSkeleton } from '../ui/LoadingBlock'
+import Skeleton from '../ui/Skeleton'
 
 const SLOW_MS = 1000
 
@@ -141,6 +144,11 @@ function HeaderList({ headers, showSensitive, empty }: { headers: Record<string,
 }
 
 export default function RequestsPage({ requestLog, onClear, retention, onRetentionChange, hosts, tunnels }: Props) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setReady(true))
+    return () => window.cancelAnimationFrame(id)
+  }, [])
   const [savedHost, setSavedHost] = useState(() => window.localStorage.getItem(HOST_STORAGE_KEY) ?? ALL_HOSTS)
   const host = hosts.length > 1 && hosts.includes(savedHost) ? savedHost : ALL_HOSTS
   const [selected, setSelected] = useState<RequestLogEntry | null>(null)
@@ -158,8 +166,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
   const [draft, setDraft] = useState<Draft | null>(null)
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<SendResult | null>(null)
-  const [exportOpen, setExportOpen] = useState(false)
-
   const selectEntry = (entry: RequestLogEntry) => {
     setSelected(entry)
     setDraft(null)
@@ -185,7 +191,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     if (!selected || !draft) return
     const port = localPortFor(selected, tunnels)
     if (!port || !window.kexoz?.localRequest) {
-      setSendResult({ error: 'Could not tell which local app this request went to. Start its share and try again.' })
+      setSendResult({ error: 'Start this share in the desktop app to send a request to its local port.' })
       return
     }
     setSending(true)
@@ -205,14 +211,13 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
       const text = new TextDecoder().decode(bytes.subarray(0, 200 * 1024))
       setSendResult({ status: result.status, durationMs: Date.now() - start, body: text, headers: result.headers })
     } catch (err) {
-      setSendResult({ error: err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : 'Your app did not answer' })
+      setSendResult({ error: err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : 'No answer' })
     } finally {
       setSending(false)
     }
   }
 
   const exportLog = (format: 'har' | 'json') => {
-    setExportOpen(false)
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     if (format === 'har') {
       downloadFile(`kexoz-requests-${stamp}.har`, JSON.stringify(toHar(displayLog, replayBase, showSensitive), null, 2), 'application/json')
@@ -331,71 +336,97 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
   const hasRequests = hostLog.length > 0
   const showHostInRows = host === ALL_HOSTS && hosts.length > 1
 
+  if (!ready) {
+    return (
+      <div className="ps-main ps-requests-main">
+        <div className="ps-page-header animate-fade-down">
+          <div>
+            <h1 className="ps-page-title">Traffic</h1>
+          <p className="ps-page-subtitle">Inspect HTTP requests reaching your shares while Kexoz is open.</p>
+          </div>
+        </div>
+        <div className="ps-requests-body animate-fade-up">
+          <div className="ps-card ps-inspector ps-req-skeleton" aria-busy="true" aria-label="Loading traffic">
+            <div className="ps-req-list" style={{ width: listWidth }}>
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="ps-req-skel-row">
+                  <Skeleton height={12} width={44} />
+                  <Skeleton height={12} width={`${58 + (i % 3) * 10}%`} />
+                  <Skeleton height={12} width={36} />
+                </div>
+              ))}
+            </div>
+            <div className="ps-req-detail">
+              <PageSkeleton cards={2} />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="ps-main ps-requests-main">
       <div className="ps-page-header animate-fade-down">
         <div>
-          <h1 className="ps-page-title">HTTP Requests</h1>
-          <p className="ps-page-subtitle">
-            {hasRequests
-              ? `${displayLog.length} of ${hostLog.length} shown`
-              : hosts.length > 1 ? 'Live requests through your previews' : 'Live requests through your preview'}
-          </p>
+          <h1 className="ps-page-title">Traffic</h1>
+          <p className="ps-page-subtitle">Inspect HTTP requests reaching your shares while Kexoz is open.</p>
         </div>
         <div className="ps-header-actions">
           {hosts.length > 1 && (
             <label className="ps-req-retention">
               Link
-              <select value={host} onChange={event => changeHost(event.target.value)}>
+              <select value={host} onChange={event => changeHost(event.target.value)} aria-label="Filter by link">
                 <option value={ALL_HOSTS}>All links</option>
                 {hosts.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
           )}
-          <label className="ps-req-retention">
-            Keep last
-            <select value={retention} onChange={event => onRetentionChange(Number(event.target.value))}>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={250}>250</option>
-            </select>
-          </label>
-          <div className="ps-req-export">
-            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => setExportOpen(v => !v)} disabled={displayLog.length === 0} aria-expanded={exportOpen}>
-              Export
-            </button>
-            {exportOpen && (
-              <div className="ps-req-export-menu" role="menu">
-                <button role="menuitem" onClick={() => exportLog('har')}>HAR file<span>Opens in browser dev tools</span></button>
-                <button role="menuitem" onClick={() => exportLog('json')}>JSON<span>Raw requests and responses</span></button>
-              </div>
-            )}
-          </div>
-          <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onClear} disabled={requestLog.length === 0}>
-            Clear
-          </button>
+          <details className="ps-header-more">
+            <summary className="ps-btn ps-btn-ghost ps-btn-sm">More</summary>
+            <div className="ps-header-more-menu" role="menu">
+              <label className="ps-header-more-label">
+                Keep last
+                <select value={retention} onChange={event => onRetentionChange(Number(event.target.value))}>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                </select>
+              </label>
+              <button type="button" role="menuitem" disabled={displayLog.length === 0} onClick={() => exportLog('har')}>
+                Export HAR
+              </button>
+              <button type="button" role="menuitem" disabled={displayLog.length === 0} onClick={() => exportLog('json')}>
+                Export JSON
+              </button>
+              <button type="button" role="menuitem" disabled={requestLog.length === 0} onClick={onClear}>
+                Clear log
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 
       <div className="ps-requests-body animate-fade-up">
         {!hasRequests ? (
           <div className="ps-card ps-req-empty-card">
-            <span className="ps-empty-title">{host === ALL_HOSTS ? 'No requests yet' : 'No requests on this link yet'}</span>
-            <span className="ps-empty-sub">Open a web share in a browser and each request shows up here. Android Preview traffic is interaction-based, not an HTTP request log.</span>
-            {emptyLink && (
-              <div className="ps-req-empty-link">
-                <span className="ps-req-empty-url">https://{emptyLink}</span>
-                <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void copyLink()}>
-                  {linkCopied ? 'Copied' : 'Copy link'}
-                </button>
-              </div>
-            )}
+            <PremiumEmpty
+              title="Waiting for requests"
+              action={emptyLink ? (
+                <div className="ps-req-empty-link">
+                  <span className="ps-req-empty-url">https://{emptyLink}</span>
+                  <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => void copyLink()}>
+                    {linkCopied ? 'Copied' : 'Copy link'}
+                  </button>
+                </div>
+              ) : undefined}
+            >Open a running web share in your browser, or send it an API request. Requests and responses will appear here.</PremiumEmpty>
           </div>
         ) : (
           <>
             <div className="ps-req-filters">
               <div className="ps-req-search">
-                <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search paths, headers and bodies" />
+                <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search paths, headers, or bodies" aria-label="Search traffic" />
               </div>
               <select value={methodFilter} onChange={event => setMethodFilter(event.target.value)} aria-label="Method">
                 <option value="all">All methods</option>
@@ -404,7 +435,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
               <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Status">
                 <option value="all">All statuses</option>
                 <option value="failed">Failed</option>
-                <option value="slow">Slower than 1 s</option>
+                <option value="slow">Slow</option>
                 <option value="2">2xx</option>
                 <option value="3">3xx</option>
                 <option value="4">4xx</option>
@@ -425,7 +456,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                 {displayLog.length === 0 ? (
                   <div className="ps-empty" style={{ flex: 1 }}>
                     <span className="ps-empty-title">Nothing matches</span>
-                    <span className="ps-empty-sub">Try a different search or filter.</span>
                     <button
                       type="button"
                       className="ps-btn ps-btn-secondary ps-btn-sm"
@@ -440,6 +470,11 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                     <div
                       key={`${entry.id}-${i}`}
                       className={`ps-req-item ${selected?.id === entry.id ? 'selected' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${entry.method} ${redactPath(entry.path, showSensitive)}, status ${entry.status ?? 'error'}`}
+                      aria-pressed={selected?.id === entry.id}
+                      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectEntry(entry) } }}
                       onClick={() => selectEntry(entry)}
                       style={{ animationDelay: `${Math.min(i * 20, 200)}ms` }}
                     >
@@ -486,39 +521,44 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           {selected.status ?? 'Error'}
                         </span>
                         {selected.durationMs != null && (
-                          <span className="ps-detail-duration" title="Time your app took to answer">{selected.durationMs} ms</span>
+                          <span className="ps-detail-duration">{selected.durationMs} ms</span>
                         )}
                         <span className="ps-detail-duration">{formatTime(selected.timestamp)}</span>
                       </div>
                       <div className="ps-detail-actions">
-                        <button
-                          className="ps-btn ps-btn-secondary ps-btn-sm"
-                          onClick={() => void replayRequest()}
-                          disabled={replaying || !replayBase(selected)}
-                          title="Send this request to your link again"
-                        >
-                          {replaying ? 'Sending…' : 'Send again'}
-                        </button>
-                        <button
-                          className="ps-btn ps-btn-ghost ps-btn-sm"
-                          onClick={startEditing}
-                          disabled={draft !== null}
-                          title="Change the body or headers and send it straight to your app"
-                        >
-                          Edit and resend
-                        </button>
                         <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => void copyCurl()}>
-                          {copied ? 'Copied' : 'Copy as curl'}
+                          {copied ? 'Copied' : 'Copy curl'}
                         </button>
+                        <details className="ps-header-more">
+                          <summary className="ps-btn ps-btn-ghost ps-btn-sm">More</summary>
+                          <div className="ps-header-more-menu" role="menu">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={replaying || !replayBase(selected)}
+                              onClick={() => void replayRequest()}
+                            >
+                              {replaying ? 'Sending…' : 'Replay'}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={draft !== null}
+                              onClick={startEditing}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </details>
                         {replayResult && originalForReplay && (
                           <span className="ps-replay-diff">
                             <span className="ps-replay-diff-orig">
-                              Was {originalForReplay.status ?? '?'}
-                              {originalForReplay.durationMs != null ? ` in ${originalForReplay.durationMs} ms` : ''},
+                              {originalForReplay.status ?? '?'}
+                              {originalForReplay.durationMs != null ? ` ${originalForReplay.durationMs}ms` : ''}
                             </span>
                             <span className={`ps-replay-diff-new ${replayResult.ok ? 'ok' : 'err'}`}>
-                              now {replayResult.status || 'error'}
-                              {replayResult.durationMs != null ? ` in ${replayResult.durationMs} ms` : ''}
+                              {' → '}{replayResult.status || 'err'}
+                              {replayResult.durationMs != null ? ` ${replayResult.durationMs}ms` : ''}
                             </span>
                           </span>
                         )}
@@ -567,11 +607,11 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                             value={draft.body}
                             onChange={event => setDraft({ ...draft, body: event.target.value })}
                             disabled={['GET', 'HEAD'].includes(draft.method)}
-                            placeholder={['GET', 'HEAD'].includes(draft.method) ? `${draft.method} requests have no body` : ''}
+                            placeholder={['GET', 'HEAD'].includes(draft.method) ? 'No body' : ''}
                           />
                           <div className="ps-req-editor-actions">
                             <span className="ps-settings-row-desc">
-                              {localPortFor(selected, tunnels) ? `Sends to localhost:${localPortFor(selected, tunnels)}` : 'Start the share this request came through to send it'}
+                              {localPortFor(selected, tunnels) ? `localhost:${localPortFor(selected, tunnels)}` : 'Share off'}
                             </span>
                             <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => { setDraft(null); setSendResult(null) }}>Cancel</button>
                             <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => void sendDraft()} disabled={sending}>
@@ -583,7 +623,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                           ) : (
                             <div>
                               <div className="ps-detail-label">
-                                Your app answered {sendResult.status} in {sendResult.durationMs} ms
+                                {sendResult.status} · {sendResult.durationMs} ms
                               </div>
                               <div className="ps-code" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto' }} dangerouslySetInnerHTML={{ __html: formatBody(sendResult.body) || 'Empty' }} />
                             </div>
@@ -593,14 +633,14 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                       {!draft && activeTab === 'headers' && (
                         <div>
                           <div className="ps-detail-label">Request headers</div>
-                          <HeaderList headers={selected.headers} showSensitive={showSensitive} empty="No headers recorded" />
+                          <HeaderList headers={selected.headers} showSensitive={showSensitive} empty="None" />
                         </div>
                       )}
                       {!draft && activeTab === 'body' && (
                         <div>
                           <div className="ps-detail-label">Request body</div>
                           {selected.method === 'GET' ? (
-                            <div className="ps-code" style={{ color: 'var(--text-soft)' }}>GET requests have no body</div>
+                            <div className="ps-code" style={{ color: 'var(--text-soft)' }}>No body</div>
                           ) : (
                             <div className="ps-code" style={{ whiteSpace: 'pre' }} dangerouslySetInnerHTML={{ __html: formatBody(redactBody(selected.body, showSensitive)) || 'Empty' }} />
                           )}
@@ -610,7 +650,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                         <>
                           <div>
                             <div className="ps-detail-label">Response headers</div>
-                            <HeaderList headers={selected.responseHeaders} showSensitive={showSensitive} empty="No response headers recorded" />
+                            <HeaderList headers={selected.responseHeaders} showSensitive={showSensitive} empty="None" />
                           </div>
                           <div>
                             <div className="ps-detail-label">Response body</div>
@@ -623,7 +663,6 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                 ) : (
                   <div className="ps-empty" style={{ flex: 1 }}>
                     <span className="ps-empty-title">Select a request</span>
-                    <span className="ps-empty-sub">Pick one from the list to see its headers, body and response.</span>
                   </div>
                 )}
               </div>

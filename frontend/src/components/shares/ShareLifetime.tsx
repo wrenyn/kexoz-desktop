@@ -40,7 +40,7 @@ export function ExpiryEditor({ clientId, tunnel, onUpdated }: { clientId: string
   return (
     <div className="ps-lifetime">
       <span className="ps-panel-hint">
-        {tunnel.expiresAt ? `Stops on ${new Date(tunnel.expiresAt).toLocaleString()}` : 'Keeps running until you stop it'}
+        {tunnel.expiresAt ? `Stops ${new Date(tunnel.expiresAt).toLocaleString()}` : 'Until you stop it'}
       </span>
       {open ? (
         <span className="ps-lifetime-edit">
@@ -51,7 +51,7 @@ export function ExpiryEditor({ clientId, tunnel, onUpdated }: { clientId: string
           <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setOpen(false)}>Cancel</button>
         </span>
       ) : (
-        <button type="button" className="ps-rename-btn" onClick={() => setOpen(true)}>{tunnel.expiresAt ? 'Change' : 'Set a stop time'}</button>
+        <button type="button" className="ps-rename-btn" onClick={() => setOpen(true)}>{tunnel.expiresAt ? 'Change' : 'Set stop'}</button>
       )}
     </div>
   )
@@ -114,7 +114,7 @@ export function AccessLinks({ clientId, tunnel }: { clientId: string; tunnel: Pe
       setMaxUses('')
       setEmails('')
       await copy(result.link.id, linkUrl(tunnel, result.link))
-      toast.success('Guest link created and copied')
+      toast.success('Link copied')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -152,14 +152,14 @@ export function AccessLinks({ clientId, tunnel }: { clientId: string; tunnel: Pe
       )}
       {adding ? (
         <form className="ps-guest-form" onSubmit={event => { event.preventDefault(); if (usesOk && emailsOk) void create() }}>
-          <input className="ps-input" placeholder="Who it’s for, like Client review" maxLength={60} value={label} onChange={event => setLabel(event.target.value)} aria-label="Link label" autoFocus />
+          <input className="ps-input" placeholder="Label" maxLength={60} value={label} onChange={event => setLabel(event.target.value)} aria-label="Link label" autoFocus />
           <select className="ps-select" value={expiresIn} onChange={event => setExpiresIn(event.target.value)} aria-label="Link expiry">
             {LINK_EXPIRY.map(option => <option key={option.label} value={option.value}>{option.label}</option>)}
           </select>
-          <input className="ps-input ps-guest-uses" type="number" min={1} max={10000} placeholder="Unlimited uses" value={maxUses} onChange={event => setMaxUses(event.target.value)} aria-label="Maximum uses" aria-invalid={!usesOk} />
+          <input className="ps-input ps-guest-uses" type="number" min={1} max={10000} placeholder="Max uses" value={maxUses} onChange={event => setMaxUses(event.target.value)} aria-label="Maximum uses" aria-invalid={!usesOk} />
           <input
             className="ps-input ps-guest-emails"
-            placeholder="Only these people (optional): ana@acme.com, @acme.com"
+            placeholder="Emails (optional)"
             value={emails}
             onChange={event => setEmails(event.target.value)}
             aria-label="People allowed to use the link"
@@ -167,17 +167,10 @@ export function AccessLinks({ clientId, tunnel }: { clientId: string; tunnel: Pe
           />
           <button type="submit" className="ps-btn ps-btn-primary ps-btn-sm" disabled={busy || !usesOk || !emailsOk}>Create</button>
           <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setAdding(false)}>Cancel</button>
-          {people.length > 0 && (
-            <span className="ps-panel-hint ps-guest-emails-hint">
-              {emailsOk
-                ? 'Visitors type their email and get a code before the share opens. Part of Pro.'
-                : 'Use full addresses like ana@acme.com, or @acme.com for everyone at a company.'}
-            </span>
-          )}
         </form>
       ) : (
         <button type="button" className="ps-panel-disclosure" onClick={() => setAdding(true)}>
-          {links && links.length > 0 ? 'Add another guest link' : 'Create a guest link that skips the password'}
+          {links && links.length > 0 ? 'Add link' : 'Guest link'}
         </button>
       )}
     </div>
@@ -212,7 +205,7 @@ export function GuestSessions({ clientId, tunnel }: { clientId: string; tunnel: 
     setBusy(true)
     try {
       setSessions(await revokeAccessSession(clientId, tunnel.id, session.id))
-      toast.success('Signed out. Their next click asks for access again.')
+      toast.success('Signed out')
     } catch (err) {
       toast.error(extractError(err))
     } finally {
@@ -233,19 +226,20 @@ export function GuestSessions({ clientId, tunnel }: { clientId: string; tunnel: 
     }
   }
 
+  if (sessions !== null && sessions.length === 0) return null
+
   return (
     <div className="ps-guest-sessions">
       <div className="ps-guest-sessions-head">
-        <span className="ps-panel-section-subtitle">Who is signed in</span>
-        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void revokeAll()} title="Ends every visitor session immediately">
-          Sign everyone out
-        </button>
+        <span className="ps-panel-kicker">Signed in</span>
+        {sessions && sessions.length > 0 && (
+          <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void revokeAll()}>
+            Sign out all
+          </button>
+        )}
       </div>
-      <p className="ps-panel-hint">Use this when a review ends or someone should lose access without changing the password.</p>
       {sessions === null ? (
-        <LoadingBlock label="Loading sessions" compact rows={2} />
-      ) : sessions.length === 0 ? (
-        <p className="ps-panel-hint">Nobody has signed in during the last week. Signing everyone out also ends older sessions Kexoz still remembers.</p>
+        <LoadingBlock label="Loading" compact rows={2} />
       ) : (
         <ul className="ps-guest-list">
           {sessions.map(session => (
@@ -253,7 +247,7 @@ export function GuestSessions({ clientId, tunnel }: { clientId: string; tunnel: 
               <span className="ps-guest-text">
                 <strong>{session.email || session.linkLabel || VIA_LABELS[session.via]}</strong>
                 <span className="ps-panel-hint">
-                  {[VIA_LABELS[session.via], session.device, session.ip, `seen ${ago(session.lastSeenAt)}`, `${session.requests.toLocaleString()} requests`].filter(Boolean).join(' · ')}
+                  {[VIA_LABELS[session.via], `seen ${ago(session.lastSeenAt)}`].filter(Boolean).join(' · ')}
                 </span>
               </span>
               <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void revoke(session)}>Sign out</button>

@@ -1,3 +1,4 @@
+import ModalOverlay from '../ui/ModalOverlay'
 import { useDialog } from '../../hooks/useDialog'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
@@ -49,6 +50,8 @@ export default function GitHubModal({ status, repo, shareName, onStatus, onRepo,
     try {
       await disconnectGitHub()
       onStatus({ connected: false, login: '', encrypted: false })
+    } catch (err) {
+      toast.error(extractError(err))
     } finally {
       setBusy(false)
     }
@@ -58,7 +61,7 @@ export default function GitHubModal({ status, repo, shareName, onStatus, onRepo,
   const repoOk = cleanDraft === '' || validRepo(cleanDraft)
 
   return (
-    <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <ModalOverlay onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
       <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="gh-title">
         <div className="ps-modal-header">
           <h2 className="ps-modal-title" id="gh-title">GitHub</h2>
@@ -89,10 +92,10 @@ export default function GitHubModal({ status, repo, shareName, onStatus, onRepo,
           <p className="field-help">{repoOk ? 'Issues for this share’s feedback open here, and its recent pull requests and commits can be attached to revisions.' : 'Use the owner/repo form, like acme/website.'}</p>
         </div>
         <div className="ps-modal-footer">
-          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose}>Close</button>
-          <button type="button" className="ps-btn ps-btn-primary" disabled={!repoOk || cleanDraft === repo} onClick={() => { onRepo(cleanDraft); onClose() }}>Save repository</button>
+          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose} disabled={busy}>Close</button>
+          <button type="button" className="ps-btn ps-btn-primary" disabled={busy || !repoOk || cleanDraft === repo} onClick={() => { onRepo(cleanDraft); onClose() }}>Save repository</button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

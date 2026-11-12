@@ -50,7 +50,8 @@ declare global {
       setTitleBarTheme?: (theme: 'light' | 'dark') => Promise<boolean>
       localRequest: (payload: LocalRequestPayload) => Promise<LocalRequestResult>
       checkPort: (port: number) => Promise<boolean>
-      notify: (payload: { title: string; body: string }) => Promise<boolean>
+      notify: (payload: { title: string; body: string; noteId?: string; tunnelId?: string }) => Promise<boolean>
+      onOpenNote?: (callback: (payload: { noteId?: string; tunnelId?: string }) => void) => () => void
       startTunnel?: (config: { key: string; tunnelUrl: string; tunnelType?: string; port: number }) => Promise<boolean>
       stopTunnel?: (key: string) => Promise<boolean>
       setTunnelPort?: (key: string, port: number) => Promise<boolean>
@@ -60,6 +61,7 @@ declare global {
       listListeningPorts?: () => Promise<ListeningPort[]>
       diagnose?: (config: { apiBase: string; ports: number[] }) => Promise<DiagnosisResult>
       capturePage?: (payload: { port: number; path: string; width: number; routes?: { path: string; port: number }[] }) => Promise<PageCapture>
+      revealCaptureExtension?: () => Promise<{ ok: boolean; path?: string; error?: string }>
       githubStatus?: () => Promise<GitHubStatus>
       githubConnect?: (token: string) => Promise<GitHubStatus>
       githubDisconnect?: () => Promise<boolean>

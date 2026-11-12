@@ -7,19 +7,28 @@ import {
 export function useProjects(clientId: string | undefined) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      setProjects([])
+      setLoaded(false)
+      return
+    }
     try {
+      setError('')
       setProjects(await listProjects(clientId))
     } catch {
-      // Keep what we have; the next change refreshes it.
+      setError('Your projects couldn’t be loaded. Check your connection and try again.')
     } finally {
       setLoaded(true)
     }
   }, [clientId])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    setLoaded(false)
+    void refresh()
+  }, [refresh])
 
   const create = useCallback(async (name: string, tunnelIds: string[] = []): Promise<string> => {
     if (!clientId) return ''
@@ -51,7 +60,7 @@ export function useProjects(clientId: string | undefined) {
     return result.tunnels
   }, [clientId])
 
-  return { projects, loaded, refresh, create, save, remove, move, addEnvironment }
+  return { projects, loaded, error, refresh, create, save, remove, move, addEnvironment }
 }
 
 export type ProjectsApi = ReturnType<typeof useProjects>

@@ -34,6 +34,7 @@ import { useConfirm } from './hooks/useConfirm'
 import { useOpenFeedback } from './hooks/useOpenFeedback'
 
 import AppShell from './components/layout/AppShell'
+import PageBoundary from './components/layout/PageBoundary'
 import Sidebar from './components/layout/Sidebar'
 import { NAV_ITEMS, type Page } from './lib/navigation'
 import LoadingScreen from './components/screens/LoadingScreen'
@@ -43,7 +44,7 @@ import WelcomePanel from './components/dashboard/WelcomePanel'
 import type { ShareControls } from './components/shares/ShareList'
 import NewShareModal from './components/modals/NewShareModal'
 
-import LoadingBlock from './components/ui/LoadingBlock'
+import PageLoader from './components/ui/PageLoader'
 
 const DashboardPage = lazy(() => import('./components/pages/DashboardPage'))
 const ProjectsPage = lazy(() => import('./components/pages/ProjectsPage'))
@@ -147,7 +148,7 @@ export default function App() {
   const [bytesIn, setBytesIn] = useState(0)
   const [bytesOut, setBytesOut] = useState(0)
   const [dailyUsage, setDailyUsage] = useState<import('./lib/api').UsagePoint[]>([])
-  useTheme()
+  const { theme, setTheme } = useTheme()
   const { requestLog, totalRequests, retention, setRetention, addLogEntry, clearLog } = useRequestLog()
   const projectsApi = useProjects(session?.id)
   const { confirm, dialog: confirmDialog } = useConfirm()
@@ -183,8 +184,17 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (reviewTunnelId) window.localStorage.setItem('kexoz-review-share', reviewTunnelId)
+    if (reviewTunnelId && reviewTunnelId !== 'all') window.localStorage.setItem('kexoz-review-share', reviewTunnelId)
   }, [reviewTunnelId])
+
+  useEffect(() => {
+    const unsub = window.kexoz?.onOpenNote?.(payload => {
+      if (payload?.tunnelId) setReviewTunnelId(payload.tunnelId)
+      if (payload?.noteId) setReviewNoteId(payload.noteId)
+      setActivePage('review')
+    })
+    return () => { unsub?.() }
+  }, [])
 
   // Ctrl/Cmd+number jumps between pages in sidebar order; Ctrl/Cmd+N starts a new share.
   useEffect(() => {
@@ -415,12 +425,13 @@ export default function App() {
 
     try {
       const storedId = getClientId()
-      setStatusMessage('Starting Kexoz…')
+      setStatusMessage('Connecting to your workspace…')
 
       const nextSession = await ensureClientIdentity(storedId)
       axios.defaults.headers.common['X-Kexoz-Client-ID'] = nextSession.id
       setClientId(nextSession.id)
       setSession(nextSession)
+      setStatusMessage('Loading your shares…')
       const savedTunnels = (await listTunnels(nextSession.id).catch(() => [])).filter(tunnel => isSupportedType(tunnel.tunnelType))
       const selected = savedTunnels.find(tunnel => tunnel.active) ?? savedTunnels[0]
       const legacyNames = loadLegacyNames()
@@ -456,7 +467,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Kexoz failed to start', error)
-      setLoadError('Can’t reach Kexoz')
+      setLoadError('Can’t reach Kexoz servers')
     } finally {
       setIsBusy(false)
     }
@@ -1185,112 +1196,134 @@ export default function App() {
         )}
 
         {step === 'dashboard' && session && (
-          <Suspense fallback={<div className="ps-main"><div className="ps-page-content"><LoadingBlock label="Opening workspace…" /></div></div>}>
-            {activePage === 'dashboard' && (persistentTunnels.length === 0
-              ? <WelcomePanel onNewShare={() => openNewShare()} />
-              : <DashboardPage
-                session={session}
-                tunnels={persistentTunnels}
-                totalRequests={totalRequests}
-                requestLog={requestLog}
-                bytesIn={bytesIn}
-                bytesOut={bytesOut}
-                dailyUsage={dailyUsage}
-                connectionEvents={connectionEvents}
-                feedbackNotes={overviewNotes}
-                onNewShare={() => openNewShare()}
-                onViewRequests={() => setActivePage('requests')}
-                onViewShares={() => { setOpenProjectId(null); setActivePage('projects') }}
-                onViewFeedback={() => setActivePage('review')}
-              />
-            )}
+          <PageBoundary key={activePage}>
+          <Suspense fallback={<PageLoader label={`Loading ${NAV_ITEMS.find(item => item.id === activePage)?.label.toLowerCase() ?? 'page'}…`} />}>
+            <div key={activePage} className="ps-page-stage" role="main" aria-label={NAV_ITEMS.find(item => item.id === activePage)?.label}>
+              {activePage === 'dashboard' && (persistentTunnels.length === 0
+                ? <WelcomePanel
+                    onNewShare={() => openNewShare()}
+                    onCapture={() => {
+                      try { window.sessionStorage.setItem('kexoz-settings-section', 'capture') } catch { /* ignore */ }
+                      setActivePage('settings')
+                    }}
+                  />
+                : <DashboardPage
+                  session={session}
+                  tunnels={persistentTunnels}
+                  totalRequests={totalRequests}
+                  requestLog={requestLog}
+                  bytesIn={bytesIn}
+                  bytesOut={bytesOut}
+                  dailyUsage={dailyUsage}
+                  connectionEvents={connectionEvents}
+                  feedbackNotes={overviewNotes}
+                  onNewShare={() => openNewShare()}
+                  onViewRequests={() => setActivePage('requests')}
+                  onViewShares={() => { setOpenProjectId(null); setActivePage('projects') }}
+                  onViewFeedback={() => setActivePage('review')}
+                />
+              )}
 
-            {activePage === 'projects' && (
-              <ProjectsPage
-                {...shareControls(session.id)}
-                clientId={session.id}
-                projects={projectsApi.projects}
-                projectsLoaded={projectsApi.loaded}
-                openId={openProjectId}
-                onOpenProject={setOpenProjectId}
-                onNewShare={openNewShare}
-                onMoveShare={moveShare}
-                onCreateProject={createProject}
-                onSaveProject={saveProject}
-                onDeleteProject={removeProject}
-                onStartProject={project => void startProject(project)}
-                onStopProject={project => void stopProject(project)}
-                onCreateEnvironment={createProjectEnvironment}
-              />
-            )}
+              {activePage === 'projects' && (
+                <ProjectsPage
+                  {...shareControls(session.id)}
+                  clientId={session.id}
+                  projects={projectsApi.projects}
+                  projectsLoaded={projectsApi.loaded}
+                  projectsError={projectsApi.error}
+                  onRetryProjects={() => void projectsApi.refresh()}
+                  openId={openProjectId}
+                  onOpenProject={setOpenProjectId}
+                  onNewShare={openNewShare}
+                  onMoveShare={moveShare}
+                  onCreateProject={createProject}
+                  onSaveProject={saveProject}
+                  onDeleteProject={removeProject}
+                  onStartProject={project => void startProject(project)}
+                  onStopProject={project => void stopProject(project)}
+                  onCreateEnvironment={createProjectEnvironment}
+                />
+              )}
 
-            {activePage === 'review' && (
-              <ReviewPage
-                clientId={session.id}
-                tunnels={persistentTunnels}
-                selectedId={reviewTunnelId}
-                onSelect={setReviewTunnelId}
-                focusNoteId={reviewNoteId}
-                onFocusNoteHandled={() => setReviewNoteId(null)}
-              />
-            )}
+              {activePage === 'review' && (
+                <ReviewPage
+                  clientId={session.id}
+                  ownerEmail={session.ownerEmail || ''}
+                  tunnels={persistentTunnels}
+                  selectedId={reviewTunnelId}
+                  onNewShare={() => openNewShare()}
+                  onSelect={setReviewTunnelId}
+                  focusNoteId={reviewNoteId}
+                  onFocusNoteHandled={() => setReviewNoteId(null)}
+                  onTunnelUpdated={handleTunnelUpdated}
+                  onOpenInboxNote={(tunnelId, noteId) => {
+                    setReviewTunnelId(tunnelId)
+                    setReviewNoteId(noteId)
+                  }}
+                />
+              )}
 
-            {activePage === 'requests' && (
-              <RequestsPage
-                requestLog={requestLog}
-                onClear={clearLog}
-                retention={retention}
-                onRetentionChange={setRetention}
-                hosts={requestHosts}
-                tunnels={persistentTunnels}
-              />
-            )}
+              {activePage === 'requests' && (
+                <RequestsPage
+                  requestLog={requestLog}
+                  onClear={clearLog}
+                  retention={retention}
+                  onRetentionChange={setRetention}
+                  hosts={requestHosts}
+                  tunnels={persistentTunnels}
+                />
+              )}
 
-            {activePage === 'domains' && (
-              <DomainsPage
-                session={session}
-                tunnels={persistentTunnels}
-                onAddAddress={handleAddAddress}
-                onRemoveAddress={(name) => void handleRemoveAddress(name)}
-                domainInput={domainInput}
-                setDomainInput={setDomainInput}
-                onDomainSubmit={handleDomainSubmit}
-                isBusy={isBusy}
-              />
-            )}
+              {activePage === 'domains' && (
+                <DomainsPage
+                  session={session}
+                  tunnels={persistentTunnels}
+                  onAddAddress={handleAddAddress}
+                  onRemoveAddress={(name) => void handleRemoveAddress(name)}
+                  domainInput={domainInput}
+                  setDomainInput={setDomainInput}
+                  onDomainSubmit={handleDomainSubmit}
+                  isBusy={isBusy}
+                />
+              )}
 
-            {activePage === 'team' && (
-              <TeamPage
-                session={session}
-                onVerify={() => void startGoogleVerify()}
-                verifying={verifying}
-                gauthEnabled={gauthEnabled}
-                onSignOut={() => void handleLogout()}
-              />
-            )}
+              {activePage === 'team' && (
+                <TeamPage
+                  session={session}
+                  onVerify={() => void startGoogleVerify()}
+                  verifying={verifying}
+                  gauthEnabled={gauthEnabled}
+                  onSignOut={() => void handleLogout()}
+                />
+              )}
 
-            {activePage === 'account' && (
-              <AccountPage
-                session={session}
-                onVerify={() => void startGoogleVerify()}
-                verifying={verifying}
-                gauthEnabled={gauthEnabled}
-                onSignOut={() => void handleLogout()}
-              />
-            )}
+              {activePage === 'account' && (
+                <AccountPage
+                  session={session}
+                  shareCount={persistentTunnels.length}
+                  onVerify={() => void startGoogleVerify()}
+                  verifying={verifying}
+                  gauthEnabled={gauthEnabled}
+                  onSignOut={() => void handleLogout()}
+                />
+              )}
 
-            {activePage === 'settings' && (
-              <SettingsPage
-                session={session}
-                onOpenTeam={() => setActivePage('team')}
-                onOpenAccount={() => setActivePage('account')}
-                onVerify={() => void startGoogleVerify()}
-                verifying={verifying}
-                gauthEnabled={gauthEnabled}
-                onSignOut={() => void handleLogout()}
-              />
-            )}
+              {activePage === 'settings' && (
+                <SettingsPage
+                  session={session}
+                  theme={theme}
+                  onThemeChange={setTheme}
+                  onOpenTeam={() => setActivePage('team')}
+                  onOpenAccount={() => setActivePage('account')}
+                  onVerify={() => void startGoogleVerify()}
+                  verifying={verifying}
+                  gauthEnabled={gauthEnabled}
+                  onSignOut={() => void handleLogout()}
+                />
+              )}
+            </div>
           </Suspense>
+          </PageBoundary>
         )}
       </AppShell>
     </>

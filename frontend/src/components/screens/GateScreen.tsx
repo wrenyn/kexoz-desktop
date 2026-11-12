@@ -1,6 +1,5 @@
 import Logo from '../ui/Logo'
 import Spinner from '../ui/Spinner'
-import TrustNote from '../ui/TrustNote'
 
 type GateScreenProps = {
   onLogin: () => void
@@ -10,7 +9,7 @@ type GateScreenProps = {
 }
 
 const GoogleMark = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }} aria-hidden="true">
+  <svg className="ps-gate-google-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
@@ -21,39 +20,40 @@ const GoogleMark = () => (
 export default function GateScreen({ onLogin, onSkip, verifying, code }: GateScreenProps) {
   return (
     <div className="ps-splash">
-      <div aria-hidden="true" style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse 60% 50% at 50% 40%, rgba(182,243,107,0.08) 0%, transparent 70%)',
-      }} />
-
       <div className="animate-gate-card ps-gate-card">
-        <div className="animate-gate-line-1" style={{ marginBottom: 22 }}>
-          <Logo style={{ width: 56, height: 56, boxShadow: '0 0 0 1px var(--border)' }} />
+        <div className="animate-gate-line-1 ps-gate-logo">
+          <Logo style={{ width: 48, height: 48 }} />
         </div>
 
-        <h1 className="animate-gate-line-2 ps-gate-title">Welcome to Kexoz</h1>
-        <p className="animate-gate-line-2 ps-gate-text">
-          {verifying
-            ? 'Finish signing in with Google in your browser. This window updates on its own.'
-            : 'Review unfinished work with your team — pin feedback on the live build and keep the same preview while you fix.'}
-        </p>
-        {verifying && code && <div className="ps-gate-code" aria-label="Sign-in code">{code}</div>}
+        <h1 className="animate-gate-line-2 ps-gate-title">
+          {verifying ? 'Finish in the browser' : 'Kexoz'}
+        </h1>
+        <p className="ps-gate-copy">{verifying ? 'Complete Google sign-in in your browser. Kexoz will continue here when you’re done.' : 'Share your local app, collect feedback, and keep your team in the loop.'}</p>
+
+        {verifying && code ? (
+          <div className="ps-gate-code animate-fade-up" aria-label="Sign-in code">
+            <span className="ps-gate-code-label">Code</span>
+            <span className="ps-gate-code-value">{code}</span>
+          </div>
+        ) : null}
 
         <div className="animate-gate-line-3 ps-gate-actions">
           <button type="button" className="ps-gate-google" onClick={onLogin} disabled={verifying}>
-            {verifying ? <><Spinner size={14} /> Waiting for Google</> : <><GoogleMark /> Continue with Google</>}
+            {verifying ? (
+              <><Spinner size={14} /> Waiting</>
+            ) : (
+              <><GoogleMark /> Continue with Google</>
+            )}
           </button>
-          <p className="ps-gate-note">The full free plan: 5 shares, password protection and preview notes.</p>
 
-          <button type="button" className="ps-btn ps-btn-ghost ps-gate-guest" onClick={onSkip}>
-            {verifying ? 'Cancel and continue as guest' : 'Continue as guest'}
+          <button type="button" className="ps-btn ps-btn-secondary ps-gate-guest" onClick={onSkip}>
+            {verifying ? 'Cancel' : 'Continue as guest'}
           </button>
-          {!verifying && <p className="ps-gate-note">Up to 3 shares. You can sign in later.</p>}
+
+          {!verifying ? (
+            <p className="ps-gate-note">Guest · 3 shares</p>
+          ) : null}
         </div>
-
-        <TrustNote title="You stay in control" tone="ok">
-          Previews run from this computer. Stop sharing anytime and reviewers lose access immediately.
-        </TrustNote>
       </div>
     </div>
   )

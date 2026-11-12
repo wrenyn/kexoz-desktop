@@ -1,3 +1,4 @@
+import ModalOverlay from '../ui/ModalOverlay'
 import { useDialog } from '../../hooks/useDialog'
 import { useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
@@ -111,7 +112,7 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, onClo
   }
 
   return (
-    <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    <ModalOverlay onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
       <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="rev-title">
         <div className="ps-modal-header">
           <div>
@@ -230,6 +231,6 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, onClo
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

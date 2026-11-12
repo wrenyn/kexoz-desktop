@@ -27,19 +27,21 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  /* Backgrounds */
-  --bg-app:        #101310;
-  --bg-sidebar:    #151B15;
-  --bg-surface:    #191F19;
-  --bg-elevated:   #252D24;
-  --bg-overlay:    rgba(16, 19, 16, 0.88);
-  --bg-input:      #151B15;
-  --bg-hover:      rgba(237, 242, 233, 0.05);
-  --bg-active:     rgba(237, 242, 233, 0.09);
+  /* Backgrounds — app stays obsidian; surface/panel lift clearly above it */
+  --bg-app:        #0E1110;
+  --bg-sidebar:    #131714;
+  --bg-surface:    #1B211D;
+  --bg-panel:      #171C19;
+  --bg-elevated:   #262E29;
+  --bg-overlay:    rgba(0, 0, 0, 0.78);
+  --bg-input:      #121712;
+  --bg-hover:      rgba(237, 242, 233, 0.06);
+  --bg-active:     rgba(237, 242, 233, 0.1);
 
   /* Borders */
-  --border:        #303A30;
-  --border-bright: #3D493C;
+  --border:        #303A33;
+  --border-bright: #4B5950;
+  --border-modal:  #4B5950;
   --border-focus:  rgba(182, 243, 107, 0.6);
   --border-input:  #303A30;
 
@@ -79,20 +81,21 @@
   /* Text */
   --text:          #EDF2E9;
   --text-strong:   #FFFFFF;
-  --text-muted:    #929B8E;
-  --text-soft:     #6F786B;
+  --text-muted:    #A4B0A7;
+  --text-soft:     #8C9C90;
   --text-accent:   #B6F36B;
 
-  /* Shadows */
-  --shadow-sm:     0 1px 3px rgba(0,0,0,0.35);
-  --shadow-md:     0 4px 16px rgba(0,0,0,0.4);
-  --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
-  --shadow-accent: 0 0 0 3px rgba(182, 243, 107, 0.18);
+  /* Shadows — quiet depth, not glow stacks */
+  --shadow-sm:     0 1px 2px rgba(0,0,0,0.28);
+  --shadow-md:     0 4px 14px rgba(0,0,0,0.32);
+  --shadow-lg:     0 16px 40px rgba(0,0,0,0.42);
+  --shadow-accent: 0 0 0 3px rgba(182, 243, 107, 0.16);
+  --edge-highlight: inset 0 1px 0 rgba(255,255,255,0.04);
 
   /* Terminal surfaces stay obsidian in both themes */
   --console-bg:     #151B15;
   --console-text:   #EDF2E9;
-  --console-muted:  #929B8E;
+  --console-muted:  #A4B0A7;
   --console-border: #303A30;
 }
 
@@ -102,39 +105,41 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  /* Backgrounds */
-  --bg-app:        #EDF2E9;
-  --bg-sidebar:    #F5F7F3;
+  /* Backgrounds — app wash, white surfaces, slightly cooler elevated chrome */
+  --bg-app:        #E8EEE4;
+  --bg-sidebar:    #F2F5EF;
   --bg-surface:    #FFFFFF;
-  --bg-elevated:   #F5F7F3;
-  --bg-overlay:    rgba(237, 242, 233, 0.92);
+  --bg-panel:      #FFFFFF;
+  --bg-elevated:   #EEF2EA;
+  --bg-overlay:    rgba(8, 10, 8, 0.48);
   --bg-input:      #FFFFFF;
-  --bg-hover:      rgba(16, 19, 16, 0.05);
-  --bg-active:     rgba(16, 19, 16, 0.08);
+  --bg-hover:      rgba(16, 19, 16, 0.06);
+  --bg-active:     rgba(16, 19, 16, 0.10);
 
-  /* Borders */
-  --border:        #D2D9CE;
-  --border-bright: #B7C0B2;
+  /* Borders — stronger than wash so cards don't dissolve */
+  --border:        #C5CEC0;
+  --border-bright: #9AA694;
+  --border-modal:  #6F7A6C;
   --border-focus:  rgba(63, 98, 18, 0.55);
-  --border-input:  #C9D1C4;
+  --border-input:  #B4BEAF;
 
   /* Accents — obsidian fill with lime text; raw lime fails contrast on light bg */
   --accent:        #101310;
-  --accent-dim:    rgba(63, 98, 18, 0.10);
-  --accent-border: rgba(63, 98, 18, 0.28);
-  --accent-glow:   rgba(63, 98, 18, 0.14);
+  --accent-dim:    rgba(63, 98, 18, 0.12);
+  --accent-border: rgba(63, 98, 18, 0.34);
+  --accent-glow:   rgba(63, 98, 18, 0.16);
   --accent-hover:  #191F19;
   --text-on-accent:#B6F36B;
 
   /* Glows & Glass */
-  --glow-primary:  rgba(16, 19, 16, 0.06);
-  --glass-bg:      rgba(255, 255, 255, 0.6);
-  --glass-border:  rgba(16, 19, 16, 0.06);
+  --glow-primary:  rgba(16, 19, 16, 0.05);
+  --glass-bg:      rgba(255, 255, 255, 0.72);
+  --glass-border:  rgba(16, 19, 16, 0.10);
 
   /* Status */
   --green:         #3F6212;
-  --green-dim:     rgba(63, 98, 18, 0.10);
-  --green-border:  rgba(63, 98, 18, 0.28);
+  --green-dim:     rgba(63, 98, 18, 0.12);
+  --green-border:  rgba(63, 98, 18, 0.32);
   --mint:          #2F6B52;
   --mint-dim:      rgba(47, 107, 82, 0.12);
   --red:           #B42318;
@@ -150,18 +155,19 @@
   --sky:           #0369A1;
   --sky-dim:       rgba(3, 105, 161, 0.10);
 
-  /* Text */
-  --text:          #101310;
-  --text-strong:   #101310;
+  /* Text — strong vs body hierarchy */
+  --text:          #1C221C;
+  --text-strong:   #0A0C0A;
   --text-muted:    #4A524D;
-  --text-soft:     #6B746E;
+  --text-soft:     #66706A;
   --text-accent:   #3F6212;
 
-  /* Shadows */
-  --shadow-sm:     0 1px 3px rgba(16,19,16,0.08);
-  --shadow-md:     0 4px 16px rgba(16,19,16,0.10);
-  --shadow-lg:     0 8px 32px rgba(16,19,16,0.12);
+  /* Shadows + light edge (dark inset white is invisible on white cards) */
+  --shadow-sm:     0 1px 2px rgba(16,19,16,0.06), 0 1px 3px rgba(16,19,16,0.08);
+  --shadow-md:     0 4px 14px rgba(16,19,16,0.10);
+  --shadow-lg:     0 12px 32px rgba(16,19,16,0.12);
   --shadow-accent: 0 0 0 3px rgba(63, 98, 18, 0.16);
+  --edge-highlight: inset 0 1px 0 rgba(255,255,255,0.92);
 }
 
 /* ─── SHARED TOKENS (theme-independent) ─────── */
@@ -173,14 +179,17 @@
   --mono-font:    var(--font-mono);
 
   --radius-xs:   4px;
-  --radius-sm:   6px;
+  --radius-sm:   8px;
   --radius:      10px;
   --radius-md:   12px;
-  --radius-lg:   16px;
-  --radius-xl:   20px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
 
-  --sidebar-w:   220px;
+  --sidebar-w:   236px;
 
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --page-max: 1080px;
 }

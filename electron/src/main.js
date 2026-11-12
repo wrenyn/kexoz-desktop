@@ -3,6 +3,7 @@ const http = require('node:http');
 const nodeNet = require('node:net');
 const dns = require('node:dns');
 const { execFile } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { connectTunnel } = require('./tunnel');
@@ -281,9 +282,18 @@ ipcMain.handle('kexoz:diagnose', async (_event, config) => {
 
 registerReviewHandlers();
 
-ipcMain.handle('kexoz:notify', async (_event, { title, body }) => {
+ipcMain.handle('kexoz:notify', async (_event, { title, body, noteId, tunnelId }) => {
   if (!Notification.isSupported()) return false;
-  new Notification({ title: String(title || 'Kexoz'), body: String(body || '') }).show();
+  const notification = new Notification({ title: String(title || 'Kexoz'), body: String(body || '') });
+  notification.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (noteId) mainWindow.webContents.send('kexoz:open-note', { noteId: String(noteId), tunnelId: String(tunnelId || '') });
+    }
+  });
+  notification.show();
   return true;
 });
 
@@ -384,6 +394,18 @@ ipcMain.handle('kexoz:set-titlebar-theme', async (_event, theme) => {
   const colors = TITLE_BAR_THEMES[theme] || TITLE_BAR_THEMES.dark;
   mainWindow.setTitleBarOverlay({ ...colors, height: TITLE_BAR_HEIGHT });
   return true;
+});
+
+ipcMain.handle('kexoz:reveal-capture-extension', async () => {
+  const folder = path.resolve(__dirname, '../../../extension');
+  try {
+    const stat = await fs.promises.stat(folder);
+    if (!stat.isDirectory()) return { ok: false, path: folder };
+    const error = await shell.openPath(folder);
+    return { ok: !error, path: folder, error: error || undefined };
+  } catch (err) {
+    return { ok: false, path: folder, error: err.message };
+  }
 });
 
 ipcMain.handle('kexoz:set-autostart', async (event, enabled) => {

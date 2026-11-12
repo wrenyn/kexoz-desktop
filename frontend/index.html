@@ -11,7 +11,7 @@
       html, body {
         margin: 0;
         min-height: 100%;
-        background: #101310;
+        background: #0E1110;
         color: #EDF2E9;
       }
       #boot {
@@ -22,7 +22,7 @@
         place-content: center;
         justify-items: center;
         gap: 13px;
-        background: radial-gradient(circle at 50% 45%, rgba(183, 247, 95, .09), transparent 24%), #101310;
+        background: #0E1110;
         font-family: 'Space Grotesk', system-ui, sans-serif;
         transition: opacity 0.2s ease;
       }
@@ -34,21 +34,24 @@
         display: grid;
         place-items: center;
       }
-      #boot .mark svg { width: 64px; height: 64px; filter: drop-shadow(0 10px 24px rgba(0,0,0,.3)); }
-      #boot .edge { stroke: #B6F36B; stroke-width: 10; stroke-dasharray: .22 .78; animation: boot-trace 1.8s linear infinite; }
+      #boot .mark svg { width: 64px; height: 64px; }
+      #boot .edge { stroke: rgba(255,255,255,.09); stroke-width: 16; }
       #boot .signal { animation: boot-signal 1.8s ease-in-out infinite; }
-      @keyframes boot-trace { to { stroke-dashoffset: -1; } }
       #boot .brand {
-        font-size: 20px;
-        font-weight: 700;
+        font-size: 24px;
+        font-weight: 650;
         letter-spacing: -0.03em;
       }
       #boot .status {
         font-size: 12px;
         color: #9AA89A;
       }
-      #boot .line { width: 104px; height: 2px; overflow: hidden; border-radius: 99px; background: #303A30; }
-      #boot .line::after { content: ''; display: block; width: 44%; height: 100%; background: linear-gradient(90deg,transparent,#B7F75F,transparent); animation: boot-progress 1.35s cubic-bezier(.16,1,.3,1) infinite; }
+      #boot .line { width: 160px; height: 2px; overflow: hidden; border-radius: 99px; background: #303A30; }
+      #boot .line::after { content: ''; display: block; width: 44%; height: 100%; background: #B6F36B; animation: boot-progress 1.4s ease-in-out infinite; }
+      [data-theme="light"] #boot { background: #E8EEE4; color: #1C221C; }
+      [data-theme="light"] #boot .status { color: #4A524D; }
+      [data-theme="light"] #boot .line { background: #C5CEC0; }
+      [data-theme="light"] #boot .line::after { background: #3F6212; }
       @keyframes boot-orbit { to { transform: rotate(360deg); } }
       @keyframes boot-breathe { 50% { transform: scale(1.035); } }
       @keyframes boot-signal { 50% { opacity: .4; } }
@@ -59,12 +62,10 @@
       (function () {
         try {
           var saved = localStorage.getItem('kexoz-theme');
-          var theme = saved === 'light' || saved === 'dark'
-            ? saved
-            : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var theme = saved === 'light' ? 'light' : 'dark';
           document.documentElement.dataset.theme = theme;
           if (theme === 'light') {
-            document.documentElement.style.background = '#EDF2E9';
+            document.documentElement.style.background = '#E8EEE4';
           }
         } catch (e) {
           document.documentElement.dataset.theme = 'dark';

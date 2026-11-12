@@ -26,7 +26,7 @@ export const NAV_ITEMS: {
   { id: 'domains', label: 'Domains', shortcut: '5', section: 'tools' },
   { id: 'requests', label: 'Traffic', shortcut: '6', section: 'tools' },
   { id: 'settings', label: 'Settings', shortcut: '7', section: 'bottom' },
-  { id: 'account', label: 'Account', shortcut: '8', section: 'bottom' },
+  { id: 'account', label: 'Account', shortcut: '8', section: 'bottom' }, // account chip in sidebar, not a nav row
 ]
 
 export const PAGE_IDS = new Set<Page>(NAV_ITEMS.map(item => item.id))

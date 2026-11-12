@@ -87,11 +87,10 @@ export default function ConnectionPanel({ tunnels, events, onNewShare }: Props) 
     <div className="ps-card ps-overview-card">
       <div className="ps-overview-card-head">
         <div>
-          <div className="ps-overview-card-title">Connection</div>
-          <div className="ps-overview-card-sub">Whether your machine is still linked to each live share</div>
+          <div className="ps-overview-card-title">Live</div>
         </div>
-        <button className={`ps-btn ps-btn-secondary ps-btn-sm ${running ? 'is-loading' : ''}`} onClick={() => void diagnose()} disabled={running} aria-busy={running || undefined} title="Checks internet, DNS, Kexoz servers, and local ports">
-          {running ? <><Spinner size={13} /> Checking</> : 'Run diagnostics'}
+        <button className={`ps-btn ps-btn-secondary ps-btn-sm ${running ? 'is-loading' : ''}`} onClick={() => void diagnose()} disabled={running} aria-busy={running || undefined}>
+          {running ? <><Spinner size={13} /> Checking</> : 'Check'}
         </button>
       </div>
 
@@ -99,11 +98,9 @@ export default function ConnectionPanel({ tunnels, events, onNewShare }: Props) 
         <div className="ps-overview-empty">
           <PremiumEmpty
             compact
-            title="No shares are running"
-            action={onNewShare ? <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New Share</button> : undefined}
-          >
-            Start one to see live status and uptime here.
-          </PremiumEmpty>
+            title="Nothing running"
+            action={onNewShare ? <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New share</button> : undefined}
+          />
         </div>
       ) : (
         <div className="ps-conn-rows">

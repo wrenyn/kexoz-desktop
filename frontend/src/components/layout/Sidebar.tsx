@@ -4,7 +4,7 @@ import Logo from '../ui/Logo'
 import Spinner from '../ui/Spinner'
 import {
   Activity, FolderKanban, Globe2, LayoutDashboard, MessageSquare,
-  Plus, Settings, UserRound, Users, type LucideIcon,
+  Plus, Settings, Users, type LucideIcon,
 } from 'lucide-react'
 
 type Props = {
@@ -27,32 +27,29 @@ export default function Sidebar({
 }: Props) {
   const tier = tierOf(session)
   const limit = SHARE_LIMITS[tier]
-  const pct = Math.min(100, (shareCount / limit) * 100)
-  const meterTone = pct >= 100 ? 'full' : pct >= 80 ? 'high' : ''
   const email = session.ownerEmail?.trim() || ''
   const accountLabel = email || 'Guest'
+  const planLabel = `${TIER_LABELS[tier]} · ${shareCount}/${limit}`
 
-  const icons: Record<Page, LucideIcon> = {
+  const icons: Partial<Record<Page, LucideIcon>> = {
     dashboard: LayoutDashboard,
     projects: FolderKanban,
     review: MessageSquare,
     team: Users,
-    inbox: MessageSquare,
     domains: Globe2,
     requests: Activity,
     settings: Settings,
-    account: UserRound,
   }
 
   const badgeFor = (id: Page) => {
     if (id === 'projects' && liveShares > 0) {
-      return <span className="ps-nav-badge ps-nav-badge-live">{liveShares} live</span>
+      return <span className="ps-nav-badge ps-nav-badge-live">{liveShares}</span>
     }
     if (id === 'review' && reviewCount > 0) {
-      return <span className="ps-nav-badge" title={`${reviewCount} open feedback`}>{reviewCount > 99 ? '99+' : reviewCount}</span>
+      return <span className="ps-nav-badge">{reviewCount > 99 ? '99+' : reviewCount}</span>
     }
     if (id === 'requests' && requestCount > 0) {
-      return <span className="ps-nav-badge" title="Recent HTTP traffic">{requestCount > 999 ? '999+' : requestCount}</span>
+      return <span className="ps-nav-badge">{requestCount > 999 ? '999+' : requestCount}</span>
     }
     if (id === 'team' && teamPending > 0) {
       return <span className="ps-nav-badge">{teamPending > 99 ? '99+' : teamPending}</span>
@@ -62,18 +59,21 @@ export default function Sidebar({
 
   const navButton = (id: Page, label: string, shortcut: string) => {
     const Icon = icons[id]
-    return <button
-      key={id}
-      type="button"
-      className={`ps-nav-item ${activePage === id ? 'active' : ''}`}
-      aria-current={activePage === id ? 'page' : undefined}
-      title={`${label} (Ctrl+${shortcut})`}
-      onClick={() => onNavigate(id)}
-    >
-      <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
-      <span>{label}</span>
-      {badgeFor(id)}
-    </button>
+    if (!Icon) return null
+    return (
+      <button
+        key={id}
+        type="button"
+        className={`ps-nav-item ${activePage === id ? 'active' : ''}`}
+        aria-current={activePage === id ? 'page' : undefined}
+        title={`${label} (Ctrl+${shortcut})`}
+        onClick={() => onNavigate(id)}
+      >
+        <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+        <span>{label}</span>
+        {badgeFor(id)}
+      </button>
+    )
   }
 
   const section = (title: string, ids: Page[]) => {
@@ -101,7 +101,6 @@ export default function Sidebar({
           <Plus size={15} strokeWidth={2} aria-hidden="true" />
           New share
         </button>
-        <p className="ps-sidebar-trust"><span aria-hidden /> Your machine stays in control</p>
       </div>
 
       <nav className="ps-nav" aria-label="Primary">
@@ -110,38 +109,42 @@ export default function Sidebar({
       </nav>
 
       <div className="ps-sidebar-footer">
-        <div className="ps-usage" title="How many shares your plan allows. Upgrade when you hit the limit.">
-          <div className="ps-usage-head">
-            <span>{TIER_LABELS[tier]} plan</span>
-            <span>{shareCount} of {limit} shares</span>
-          </div>
-          <div className="ps-usage-bar" role="progressbar" aria-label="Shares used on your plan" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
-            <div className={meterTone} style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-
-        <div className="ps-nav-group ps-nav-footer-links">
-          {NAV_ITEMS.filter(item => item.section === 'bottom').map(item => navButton(item.id, item.label, item.shortcut))}
-        </div>
-
         <button
           type="button"
-          className={`ps-sidebar-account ${activePage === 'account' || activePage === 'settings' ? 'active' : ''}`}
-          aria-current={activePage === 'account' ? 'page' : undefined}
-          title="Account"
-          onClick={() => onNavigate('account')}
+          className={`ps-nav-item ${activePage === 'settings' ? 'active' : ''}`}
+          aria-current={activePage === 'settings' ? 'page' : undefined}
+          title="Settings (Ctrl+7)"
+          onClick={() => onNavigate('settings')}
         >
-          <span className="ps-account-avatar" aria-hidden="true">{accountLabel.charAt(0).toUpperCase()}</span>
-          <span className="ps-account-info">
-            <span className="ps-account-email" title={email || undefined}>{accountLabel}</span>
-            <span className="ps-account-sub">{email ? 'Account' : 'Not signed in'}</span>
-          </span>
+          <Settings size={16} strokeWidth={1.8} aria-hidden="true" />
+          <span>Settings</span>
         </button>
-        {!email && (
-          <button type="button" className={`ps-btn ps-btn-secondary ps-btn-sm ps-sidebar-signin ${verifying ? 'is-loading' : ''}`} onClick={onLogin} disabled={verifying}>
-            {verifying ? <><Spinner size={13} /> Waiting</> : 'Sign in'}
+
+        <div className="ps-sidebar-account-wrap">
+          <button
+            type="button"
+            className={`ps-sidebar-account ${activePage === 'account' ? 'active' : ''}`}
+            aria-current={activePage === 'account' ? 'page' : undefined}
+            title="Account"
+            onClick={() => onNavigate('account')}
+          >
+            <span className="ps-account-avatar" aria-hidden="true">{accountLabel.charAt(0).toUpperCase()}</span>
+            <span className="ps-account-info">
+              <span className="ps-account-email" title={email || undefined}>{accountLabel}</span>
+              <span className="ps-account-sub">{planLabel}</span>
+            </span>
           </button>
-        )}
+          {!email && (
+            <button
+              type="button"
+              className={`ps-sidebar-signin-link ${verifying ? 'is-loading' : ''}`}
+              onClick={onLogin}
+              disabled={verifying}
+            >
+              {verifying ? <><Spinner size={12} /> Waiting</> : 'Sign in'}
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   )

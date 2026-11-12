@@ -1,4 +1,5 @@
 import type { PersistentTunnel, PreviewNote, PreviewRevision } from './api'
+import { createWorkspaceGithubIssue } from './api'
 import { shareUrl } from './shares'
 
 export type GitHubStatus = { connected: boolean; login: string; encrypted: boolean; error?: string }
@@ -66,7 +67,19 @@ const deviceLine = (note: PreviewNote): string => {
 const quote = (text: string): string => text.split('\n').map(line => `> ${line}`).join('\n')
 
 /** Opens an issue for a note, with where it is and what the reviewer saw. */
-export const createIssueForNote = async (repo: string, tunnel: PersistentTunnel, note: PreviewNote): Promise<string> => {
+export const createIssueForNote = async (
+  repo: string,
+  tunnel: PersistentTunnel,
+  note: PreviewNote,
+  clientId?: string,
+): Promise<string> => {
+  if (clientId) {
+    try {
+      return await createWorkspaceGithubIssue(clientId, note.id)
+    } catch (err) {
+      if (!githubAvailable()) throw err
+    }
+  }
   const page = `${shareUrl(tunnel)}${note.path.startsWith('/') ? note.path : `/${note.path}`}`
   const lines = [
     quote(note.body),

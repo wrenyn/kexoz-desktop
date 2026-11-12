@@ -65,6 +65,8 @@ export function useOpenFeedback(clientId: string | undefined): number {
           void window.kexoz?.notify?.({
             title: media ? 'New media feedback' : 'New feedback',
             body: (note.body || 'Someone left a note on your preview').slice(0, 140),
+            noteId: note.id,
+            tunnelId: note.tunnelId,
           })
         }
         if (fresh.length) saveSeen(seen)

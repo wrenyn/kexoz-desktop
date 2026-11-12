@@ -6,6 +6,11 @@ contextBridge.exposeInMainWorld('kexoz', {
   localRequest: (payload) => ipcRenderer.invoke('kexoz:local-request', payload),
   checkPort: (port) => ipcRenderer.invoke('kexoz:check-port', port),
   notify: (payload) => ipcRenderer.invoke('kexoz:notify', payload),
+  onOpenNote: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('kexoz:open-note', handler);
+    return () => ipcRenderer.removeListener('kexoz:open-note', handler);
+  },
   startTunnel: (config) => ipcRenderer.invoke('kexoz:start-tunnel', config),
   stopTunnel: (key) => ipcRenderer.invoke('kexoz:stop-tunnel', key),
   setTunnelPort: (key, port) => ipcRenderer.invoke('kexoz:set-tunnel-port', key, port),
@@ -19,6 +24,7 @@ contextBridge.exposeInMainWorld('kexoz', {
   listListeningPorts: () => ipcRenderer.invoke('kexoz:list-listening-ports'),
   diagnose: (config) => ipcRenderer.invoke('kexoz:diagnose', config),
   capturePage: (payload) => ipcRenderer.invoke('kexoz:capture-page', payload),
+  revealCaptureExtension: () => ipcRenderer.invoke('kexoz:reveal-capture-extension'),
   githubStatus: () => ipcRenderer.invoke('kexoz:github-status'),
   githubConnect: (token) => ipcRenderer.invoke('kexoz:github-connect', token),
   githubDisconnect: () => ipcRenderer.invoke('kexoz:github-disconnect'),

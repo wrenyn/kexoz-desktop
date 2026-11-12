@@ -1,3 +1,4 @@
+import ModalOverlay from '../ui/ModalOverlay'
 import { type ReactNode } from 'react'
 import { useDialog } from '../../hooks/useDialog'
 
@@ -17,7 +18,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, tone = 'de
   const dialogRef = useDialog(onCancel)
 
   return (
-    <div className="ps-modal-overlay" onClick={onCancel}>
+    <ModalOverlay onClick={onCancel}>
       <div
         ref={dialogRef}
         className="ps-modal ps-confirm"
@@ -29,9 +30,6 @@ export default function ConfirmDialog({ title, message, confirmLabel, tone = 'de
         tabIndex={-1}
       >
         <div className={`ps-confirm-body ${tone === 'danger' ? 'is-danger' : ''}`}>
-          <div className={`ps-confirm-icon ${tone === 'danger' ? 'is-danger' : ''}`} aria-hidden="true">
-            {tone === 'danger' ? '!' : '?'}
-          </div>
           <div className="ps-confirm-copy">
             <h2 className="ps-confirm-title" id="confirm-title">{title}</h2>
             <div className="ps-confirm-message" id="confirm-message">{message}</div>
@@ -50,6 +48,6 @@ export default function ConfirmDialog({ title, message, confirmLabel, tone = 'de
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   )
 }

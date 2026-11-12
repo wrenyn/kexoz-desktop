@@ -1,11 +1,14 @@
+import ModalOverlay from '../ui/ModalOverlay'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { ClientSession, PersistentTunnel } from '../../lib/api'
 import { ROOT_DOMAIN, checkCustomDomain, tierOf, upgradeUrl } from '../../lib/api'
 import { normalizeSubdomain } from '../../lib/utils'
 import Spinner from '../ui/Spinner'
 import PremiumEmpty from '../ui/PremiumEmpty'
-import TrustNote from '../ui/TrustNote'
 import LoadingBlock from '../ui/LoadingBlock'
+import { useDialog } from '../../hooks/useDialog'
+import { X } from 'lucide-react'
+import { useCopy } from '../../hooks/useCopy'
 
 type Props = {
   session: ClientSession | null
@@ -31,7 +34,7 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
   const [status, setStatus] = useState<'unknown' | 'ready' | 'waiting'>('unknown')
   const [checking, setChecking] = useState(false)
   const [target, setTarget] = useState(dnsTarget)
-  const [copied, setCopied] = useState<string | null>(null)
+  const { copied, copy } = useCopy()
   const name = recordName(domain)
   const ready = status === 'ready'
 
@@ -54,12 +57,6 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
     return () => window.clearInterval(timer)
   }, [check, ready])
 
-  const copy = (key: string, text: string) => {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      window.setTimeout(() => setCopied(current => (current === key ? null : current)), 1600)
-    })
-  }
 
   const badge =
     status === 'ready' ? <span className="ps-badge ps-badge-green">Connected</span> :
@@ -95,9 +92,6 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
           <p className="ps-domains-section-text">
             Add this record at your DNS provider. It usually starts working within a few minutes, and this page updates on its own.
           </p>
-          <TrustNote title="Why this step exists" tone="ok">
-            We only mark the domain connected after public DNS points here — so visitors never hit a half-configured address.
-          </TrustNote>
           {target ? (
             <div className="ps-dns-record">
               <span className="ps-dns-head">Type</span>
@@ -130,13 +124,20 @@ export default function DomainsPage({
   domainInput, setDomainInput, onDomainSubmit, isBusy,
 }: Props) {
   const [showAddCustom, setShowAddCustom] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
+  const { copied, copy } = useCopy()
   const [newAddress, setNewAddress] = useState('')
   const [addError, setAddError] = useState('')
   const [adding, setAdding] = useState(false)
   const tier = session ? tierOf(session) : 'anonymous'
   const isPro = tier === 'pro' || tier === 'pro_plus'
   const addresses = session?.domains ?? []
+  const customDomain = session?.customDomain ?? ''
+  const [domainAtOpen, setDomainAtOpen] = useState('')
+  const dialogRef = useDialog(() => { if (!isBusy) setShowAddCustom(false) }, showAddCustom)
+
+  useEffect(() => {
+    if (showAddCustom && customDomain && customDomain !== domainAtOpen) setShowAddCustom(false)
+  }, [customDomain, showAddCustom, domainAtOpen])
 
   /** Shares on an address, the one serving it first. */
   const sharesUsing = (name: string) => tunnels
@@ -145,12 +146,7 @@ export default function DomainsPage({
   const describe = (share: PersistentTunnel) =>
     share.name?.trim() || `localhost:${share.port}`
 
-  const copyLink = (host: string) => {
-    void navigator.clipboard.writeText(`https://${host}`).then(() => {
-      setCopied(host)
-      window.setTimeout(() => setCopied(current => (current === host ? null : current)), 1600)
-    })
-  }
+  const copyLink = (host: string) => { void copy(host, `https://${host}`) }
 
   const submitAddress = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -173,12 +169,15 @@ export default function DomainsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Domains</h1>
-          <p className="ps-page-subtitle">Kexoz subdomains and custom domains — DNS verification and SSL status</p>
+          <p className="ps-page-subtitle">Reserve addresses for your shares or connect a domain you own.</p>
         </div>
         {isPro && (
           <div className="ps-header-actions">
-            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => setShowAddCustom(true)}>
-              Add custom domain
+            <button
+              className="ps-btn ps-btn-secondary ps-btn-sm"
+              onClick={() => { setDomainAtOpen(customDomain); setShowAddCustom(true) }}
+            >
+              {customDomain ? 'Change custom domain' : 'Add custom domain'}
             </button>
           </div>
         )}
@@ -187,6 +186,7 @@ export default function DomainsPage({
       <div className="ps-page-content">
         <div className="ps-card animate-fade-up">
           <form className="ps-address-form" onSubmit={e => void submitAddress(e)}>
+            <label className="ps-label" htmlFor="new-address">Reserve a Kexoz address</label>
             <div className="ps-address-form-row">
               <div className="ps-input-group">
                 <input
@@ -194,6 +194,7 @@ export default function DomainsPage({
                   value={newAddress}
                   onChange={e => { setNewAddress(e.target.value.toLowerCase()); setAddError('') }}
                   placeholder="my-app"
+                  id="new-address"
                   aria-label="New address"
                   aria-invalid={Boolean(addError)}
                 />
@@ -203,15 +204,11 @@ export default function DomainsPage({
                 {adding ? <><Spinner size={13} /> Adding</> : 'Add address'}
               </button>
             </div>
-            {addError
-              ? <p className="ps-ns-error" role="alert">{addError}</p>
-              : <p className="field-help">Pick a name people will recognise. You can use it for any share.</p>}
+            {addError ? <p className="ps-ns-error" role="alert">{addError}</p> : null}
           </form>
 
           {addresses.length === 0 ? (
-            <PremiumEmpty title="No addresses yet">
-              Add one above, then pick it when you create a share. Example: my-app.{ROOT_DOMAIN}
-            </PremiumEmpty>
+            <PremiumEmpty title="Your next share starts here">Reserve an address above, then select it when you create a share.</PremiumEmpty>
           ) : (
             addresses.map(name => {
               const host = `${name}.${ROOT_DOMAIN}`
@@ -253,10 +250,8 @@ export default function DomainsPage({
 
         {!isPro && (
           <div className="ps-card ps-domains-section ps-domains-upsell animate-fade-up delay-150">
-            <div>
-              <div className="ps-domains-section-title">Use your own domain</div>
-              <p className="ps-domains-section-text">Custom domains are part of Pro.</p>
-            </div>
+            <div className="ps-domains-section-title">Custom domain</div>
+            <p className="ps-settings-row-desc">Use your own domain for a familiar, branded share link. Available on Pro and Pro+.</p>
             {session && (
               <a
                 className="ps-btn ps-btn-primary ps-btn-sm"
@@ -264,7 +259,7 @@ export default function DomainsPage({
                 target="_blank"
                 rel="noreferrer"
               >
-                Upgrade plan
+                Upgrade
               </a>
             )}
           </div>
@@ -272,20 +267,27 @@ export default function DomainsPage({
       </div>
 
       {showAddCustom && (
-        <div className="ps-modal-overlay" onClick={() => setShowAddCustom(false)}>
+        <ModalOverlay onClick={() => { if (!isBusy) setShowAddCustom(false) }}>
           <div
-            className="ps-modal ps-confirm"
+            className="ps-modal ps-ns"
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="custom-domain-title"
             onClick={e => e.stopPropagation()}
-            onKeyDown={e => { if (e.key === 'Escape') setShowAddCustom(false) }}
           >
-            <form onSubmit={e => { onDomainSubmit(e); setShowAddCustom(false) }}>
-              <div className="ps-confirm-body">
-                <h2 className="ps-confirm-title" id="custom-domain-title">Add custom domain</h2>
-                <p className="ps-confirm-message">Use a domain you own, like app.yourcompany.com. Next you’ll get a DNS record to add at your provider.</p>
-                <div className="ps-ns-field" style={{ marginTop: 8 }}>
+            <form onSubmit={onDomainSubmit}>
+              <div className="ps-ns-header">
+                <div>
+                  <h2 className="ps-modal-title" id="custom-domain-title">Custom domain</h2>
+                </div>
+                <button type="button" className="ps-ns-close" aria-label="Close" onClick={() => setShowAddCustom(false)} disabled={isBusy}>
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="ps-ns-body" style={{ padding: '18px 24px' }}>
+                <div className="ps-ns-field">
                   <label className="ps-label" htmlFor="custom-domain-input">Domain</label>
                   <input
                     id="custom-domain-input"
@@ -294,18 +296,19 @@ export default function DomainsPage({
                     onChange={e => setDomainInput(e.target.value.toLowerCase())}
                     placeholder="app.yourdomain.com"
                     autoFocus
+                    disabled={isBusy}
                   />
                 </div>
               </div>
-              <div className="ps-confirm-footer">
-                <button type="button" className="ps-btn ps-btn-secondary" onClick={() => setShowAddCustom(false)}>Cancel</button>
-                <button type="submit" className="ps-btn ps-btn-primary" disabled={isBusy || !domainInput.trim()}>
-                  Add domain
+              <div className="ps-ns-footer">
+                <button type="button" className="ps-btn ps-btn-ghost" onClick={() => setShowAddCustom(false)} disabled={isBusy}>Cancel</button>
+                <button type="submit" className={`ps-btn ps-btn-primary ${isBusy ? 'is-loading' : ''}`} disabled={isBusy || !domainInput.trim()}>
+                  {isBusy ? <><Spinner size={14} /> Adding</> : 'Continue'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   )

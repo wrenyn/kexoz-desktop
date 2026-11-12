@@ -11,6 +11,7 @@ import { extractError, formatBytes, fromBase64 } from '../../lib/utils'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCopy } from '../../hooks/useCopy'
 import LoadingBlock from '../ui/LoadingBlock'
+import PremiumEmpty from '../ui/PremiumEmpty'
 import Spinner from '../ui/Spinner'
 
 type Props = {
@@ -227,7 +228,6 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
     <div className="ps-page-header animate-fade-down">
       <div>
         <h1 className="ps-page-title">Webhook Inbox</h1>
-        <p className="ps-page-subtitle">Permanent URL for webhooks and OAuth — requests are kept even while the app is offline</p>
       </div>
       {projects.length > 1 && project && (
         <div className="ps-header-actions">
@@ -245,10 +245,7 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
         {header}
         <div className="ps-page-content animate-fade-up">
           <div className="ps-card">
-            <div className="ps-empty">
-              <span className="ps-empty-title">Create a project first</span>
-              <span className="ps-empty-sub">Each project gets its own inbox, forwarded to one of its web shares.</span>
-            </div>
+            <PremiumEmpty title="Create a project first" />
           </div>
         </div>
       </div>
@@ -261,26 +258,18 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
         {header}
         <div className="ps-page-content animate-fade-up">
           <div className="ps-card">
-            <div className="ps-empty ps-empty-setup">
-              {loadedFor === project.id ? (
-                <span className="ps-empty-title">Give {project.name} an inbox</span>
-              ) : (
-                <div style={{ width: '100%', maxWidth: 360 }}>
-                  <LoadingBlock label="Loading inbox" compact rows={2} />
-                </div>
-              )}
-              {loadedFor === project.id && (
-                <>
-                  <span className="ps-empty-sub">
-                    Point Stripe, GitHub or an OAuth app at one URL that never changes. While your app runs, requests go straight to it.
-                    When it’s off, Kexoz stores them so you can replay them later. Keeps the last {view?.limit || 50}.
-                  </span>
-                  <button type="button" className={`ps-btn ps-btn-primary ${busy ? 'is-loading' : ''}`} onClick={() => void create()} disabled={busy} aria-busy={busy || undefined} style={{ marginTop: 8 }}>
+            {loadedFor !== project.id ? (
+              <LoadingBlock label="Loading inbox" compact rows={2} />
+            ) : (
+              <PremiumEmpty
+                title={`Give ${project.name} an inbox`}
+                action={(
+                  <button type="button" className={`ps-btn ps-btn-primary ${busy ? 'is-loading' : ''}`} onClick={() => void create()} disabled={busy} aria-busy={busy || undefined}>
                     {busy ? <><Spinner size={14} /> Creating</> : 'Create inbox'}
                   </button>
-                </>
-              )}
-            </div>
+                )}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -338,7 +327,6 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
           <div className="ps-card">
             <div className="ps-empty">
               <span className="ps-empty-title">No requests yet</span>
-              <span className="ps-empty-sub">Send a test webhook to the URL above. It shows up here within a few seconds.</span>
             </div>
           </div>
         ) : (
@@ -464,7 +452,6 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
                 ) : (
                   <div className="ps-empty" style={{ flex: 1 }}>
                     <span className="ps-empty-title">Select a request</span>
-                    <span className="ps-empty-sub">See its body and headers, then replay it to your app.</span>
                   </div>
                 )}
               </div>
