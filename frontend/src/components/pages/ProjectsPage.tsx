@@ -6,6 +6,8 @@ import { extractError } from '../../lib/utils'
 import ProjectEditor from '../projects/ProjectEditor'
 import ShareList, { type ShareControls } from '../shares/ShareList'
 import { useCopy } from '../../hooks/useCopy'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import { PageSkeleton } from '../ui/LoadingBlock'
 
 type Props = ShareControls & {
   clientId: string
@@ -24,7 +26,6 @@ type Props = ShareControls & {
   onStopProject: (project: Project) => void
   /** Copies environment `from` into a new one; resolves to whether it worked. */
   onCreateEnvironment: (project: Project, name: string, from: string) => Promise<boolean>
-  onOpenInbox: (project: Project) => void
 }
 
 const quoted = (name: string) => /\s/.test(name) ? `"${name}"` : name
@@ -126,7 +127,7 @@ function SetupChoices({ onSeparate, onRouted }: { onSeparate: () => void; onRout
 export default function ProjectsPage(props: Props) {
   const {
     clientId, persistentTunnels, isBusy, projects, projectsLoaded, openId, onOpenProject, onNewShare, onMoveShare,
-    onCreateProject, onSaveProject, onDeleteProject, onStartProject, onStopProject, onCreateEnvironment, onOpenInbox,
+    onCreateProject, onSaveProject, onDeleteProject, onStartProject, onStopProject, onCreateEnvironment,
   } = props
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -208,7 +209,6 @@ export default function ProjectsPage(props: Props) {
             <a className="ps-btn ps-btn-ghost ps-btn-sm" href={reviewWorkspaceUrl(clientId, project.id)} target="_blank" rel="noreferrer">Team board</a>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, true)}>Reuse version</button>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" disabled={versionBusy} onClick={() => void cutVersion(project, false)}>New version</button>
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => onOpenInbox(project)}>Inbox</button>
             <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setEditing(true)} disabled={editing}>Edit</button>
             <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => onNewShare(project.id, false, env)}>Add share</button>
             {runButtons(scoped, running, startable)}
@@ -234,44 +234,51 @@ export default function ProjectsPage(props: Props) {
             </div>
           )}
           {all.length > 0 && (
-            <div className="ps-env-bar">
-              {environments.length > 1 && (
-                <div className="ps-segmented" role="tablist" aria-label="Environment">
-                  {environments.map(item => {
-                    const live = all.some(tunnel => (tunnel.environment ?? '') === item && shareStatus(tunnel) === 'active')
-                    return (
-                      <button
-                        key={item || 'main'}
-                        type="button"
-                        role="tab"
-                        aria-selected={env === item}
-                        className={`ps-segmented-item ${env === item ? 'active' : ''}`}
-                        onClick={() => setEnvTab(item)}
-                      >
-                        {live && <span className="ps-share-dot active" aria-hidden="true" />}
-                        {environmentLabel(item)}
-                      </button>
-                    )
-                  })}
-                </div>
+            <details className="ps-env-details" open={environments.length > 1 || addingEnv || Boolean(env)}>
+              <summary>
+                {environments.length > 1
+                  ? `Environments · ${environmentLabel(env)}`
+                  : 'Environments (optional)'}
+              </summary>
+              <div className="ps-env-bar">
+                {environments.length > 1 && (
+                  <div className="ps-segmented" role="tablist" aria-label="Environment">
+                    {environments.map(item => {
+                      const live = all.some(tunnel => (tunnel.environment ?? '') === item && shareStatus(tunnel) === 'active')
+                      return (
+                        <button
+                          key={item || 'main'}
+                          type="button"
+                          role="tab"
+                          aria-selected={env === item}
+                          className={`ps-segmented-item ${env === item ? 'active' : ''}`}
+                          onClick={() => setEnvTab(item)}
+                        >
+                          {live && <span className="ps-share-dot active" aria-hidden="true" />}
+                          {environmentLabel(item)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {!addingEnv && (
+                  <button type="button" className="ps-panel-disclosure" onClick={() => setAddingEnv(true)}>
+                    {environments.length > 1 ? 'New environment' : 'Copy to staging or a branch environment'}
+                  </button>
+                )}
+              </div>
+              {addingEnv && (
+                <NewEnvironmentForm
+                  environments={environments}
+                  onCancel={() => setAddingEnv(false)}
+                  onCreate={async (name, from) => {
+                    const ok = await onCreateEnvironment(project, name, from)
+                    if (ok) setEnvTab(name)
+                    return ok
+                  }}
+                />
               )}
-              {!addingEnv && (
-                <button type="button" className="ps-panel-disclosure" onClick={() => setAddingEnv(true)}>
-                  {environments.length > 1 ? 'New environment' : 'Copy this project to a staging or branch environment'}
-                </button>
-              )}
-            </div>
-          )}
-          {addingEnv && (
-            <NewEnvironmentForm
-              environments={environments}
-              onCancel={() => setAddingEnv(false)}
-              onCreate={async (name, from) => {
-                const ok = await onCreateEnvironment(project, name, from)
-                if (ok) setEnvTab(name)
-                return ok
-              }}
-            />
+            </details>
           )}
           {editing && (
             <ProjectEditor
@@ -335,18 +342,18 @@ export default function ProjectsPage(props: Props) {
           />
         )}
 
-        {projects.length > 0 ? (
+        {!projectsLoaded && !creating ? (
+          <PageSkeleton cards={4} />
+        ) : projects.length > 0 ? (
           <div className="ps-project-grid">
             {projects.map(item => {
               const { shares, running } = summarize(item, byId)
               const main = inEnvironment(item, byId, '')
               const mainSummary = summarize(main, byId)
-              const otherEnvironments = new Set(shares.map(tunnel => tunnel.environment ?? '').filter(Boolean)).size
               const hidden = mainSummary.shares.length - PREVIEW_SHARES
-              const meta = [
-                shares.length === 0 ? '' : `${shares.length} ${shares.length === 1 ? 'share' : 'shares'}`,
-                otherEnvironments > 0 ? `${otherEnvironments + 1} environments` : '',
-              ].filter(Boolean).join(' · ')
+              const meta = shares.length === 0
+                ? ''
+                : `${shares.length} ${shares.length === 1 ? 'share' : 'shares'}`
               return (
                 <article key={item.id} className={`ps-project-card ${running > 0 ? 'running' : ''}`}>
                   <button type="button" className="ps-project-card-open" onClick={() => openProject(item.id)} aria-label={`Open ${item.name}`} />
@@ -386,18 +393,14 @@ export default function ProjectsPage(props: Props) {
               </button>
             )}
           </div>
-        ) : projectsLoaded && !creating && (
+        ) : !creating && (
           <div className="ps-card">
-            <div className="ps-empty ps-empty-setup">
-              <span className="ps-empty-title">Start with a project</span>
-              <span className="ps-empty-sub">
-                A project is one app you’re working on. Inside it, share your frontend and backend on separate links,
-                or on one link that sends /api to your backend.
-              </span>
-              <button type="button" className="ps-btn ps-btn-primary" onClick={() => setCreating(true)} style={{ marginTop: 8 }}>
-                New project
-              </button>
-            </div>
+            <PremiumEmpty
+              title="Start with a project"
+              action={<button type="button" className="ps-btn ps-btn-primary" onClick={() => setCreating(true)}>New project</button>}
+            >
+              A project is one app you’re working on. Share a web frontend/backend, then review feedback together. Mobile preview is coming soon.
+            </PremiumEmpty>
           </div>
         )}
 

@@ -19,6 +19,8 @@ export type NewShareRequest = {
   newProjectName?: string
   /** Preview environment inside the project; empty is main. */
   environment?: string
+  /** Android serial / emulator id for Mobile Preview shares. */
+  mobileSerial?: string
 }
 
 export const EXPIRY_OPTIONS = [
@@ -33,6 +35,7 @@ export const TYPE_LABELS: Record<TunnelType, string> = {
   e2e: 'Web · end-to-end encrypted',
   tcp: 'TCP',
   udp: 'UDP',
+  mobile: 'Android Preview',
 }
 
 /** Share types the app can still run; older folder and terminal shares are ignored. */

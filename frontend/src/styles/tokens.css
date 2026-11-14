@@ -166,8 +166,8 @@
 
 /* ─── SHARED TOKENS (theme-independent) ─────── */
 :root {
-  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', 'Inter Variable', system-ui, sans-serif;
-  --font-body:    'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', system-ui, sans-serif;
+  --font-body:    var(--font-heading);
   --font-mono:    'IBM Plex Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
   --sans-font:    var(--font-body);
   --mono-font:    var(--font-mono);

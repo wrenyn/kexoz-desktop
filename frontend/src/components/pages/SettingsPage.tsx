@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'react-hot-toast'
-import {
-  ROOT_DOMAIN, inviteTeamMember, listSharedWorkspaces, listTeam, revokeTeamMember, tierOf, upgradeUrl,
-  type ClientSession, type SharedWorkspace, type TeamMember,
-} from '../../lib/api'
-import { extractError } from '../../lib/utils'
+import { ROOT_DOMAIN, tierOf, upgradeUrl, type ClientSession } from '../../lib/api'
+import { useCopy } from '../../hooks/useCopy'
+import TrustNote from '../ui/TrustNote'
 
 type Props = {
   session: ClientSession
@@ -12,254 +9,259 @@ type Props = {
   verifying: boolean
   gauthEnabled: boolean
   onSignOut: () => void
+  onOpenTeam?: () => void
+  onOpenAccount?: () => void
 }
 
-const TIER_LABEL: Record<string, string> = {
-  anonymous: 'Guest',
-  verified:  'Free',
-  pro:       'Pro',
-  pro_plus:  'Pro+',
+type Section = 'workspace' | 'appearance' | 'notifications' | 'developer' | 'billing' | 'security'
+
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'workspace', label: 'Workspace' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'developer', label: 'Developer' },
+  { id: 'billing', label: 'Billing' },
+  { id: 'security', label: 'Security' },
+]
+
+const DESKTOP_NOTIFY_KEY = 'kexoz-notify-desktop'
+const ASSIGNMENT_NOTIFY_KEY = 'kexoz-notify-assignment'
+
+function readFlag(key: string, fallback = true) {
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (raw == null) return fallback
+    return raw === '1' || raw === 'true'
+  } catch {
+    return fallback
+  }
+}
+
+function writeFlag(key: string, value: boolean) {
+  try {
+    window.localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    // ignore
+  }
 }
 
 export default function SettingsPage({
-  session, onVerify,
-  verifying, gauthEnabled, onSignOut,
+  session, onSignOut, onOpenTeam, onOpenAccount,
 }: Props) {
   const tier = tierOf(session)
+  const [section, setSection] = useState<Section>('workspace')
+  const [desktopNotify, setDesktopNotify] = useState(() => readFlag(DESKTOP_NOTIFY_KEY, true))
+  const [assignmentNotify, setAssignmentNotify] = useState(() => readFlag(ASSIGNMENT_NOTIFY_KEY, true))
+  const { copied, copy } = useCopy()
+
+  useEffect(() => { writeFlag(DESKTOP_NOTIFY_KEY, desktopNotify) }, [desktopNotify])
+  useEffect(() => { writeFlag(ASSIGNMENT_NOTIFY_KEY, assignmentNotify) }, [assignmentNotify])
 
   return (
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Settings</h1>
-          <p className="ps-page-subtitle">Account and who can join this workspace</p>
+          <p className="ps-page-subtitle">Workspace preferences, notifications, and developer options</p>
         </div>
       </div>
 
       <div className="ps-page-content">
-        <div className="ps-settings-page animate-fade-up">
+        <div className="ps-settings-layout animate-fade-up">
+          <nav className="ps-settings-nav" aria-label="Settings sections">
+            {SECTIONS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                className={`ps-settings-nav-item${section === item.id ? ' active' : ''}`}
+                aria-current={section === item.id ? 'true' : undefined}
+                onClick={() => setSection(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
 
-          <section className="ps-card ps-settings-section">
-            <div className="ps-settings-section-title">Account</div>
+          <div className="ps-settings-page">
+            {section === 'workspace' && (
+              <section className="ps-card ps-settings-section">
+                <div className="ps-settings-section-title">Workspace preferences</div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Members</div>
+                    <div className="ps-settings-row-desc">Invites and roles live on the Team page</div>
+                  </div>
+                  <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onOpenTeam}>Open Team</button>
+                </div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Account</div>
+                    <div className="ps-settings-row-desc">Profile, plan, and sign-in</div>
+                  </div>
+                  <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onOpenAccount}>Open Account</button>
+                </div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Subdomain</div>
+                    <div className="ps-settings-row-desc">{session.subdomain || '—'}</div>
+                  </div>
+                </div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">External reviewers</div>
+                    <div className="ps-settings-row-desc">Clients can review on the website without installing desktop.</div>
+                  </div>
+                </div>
+              </section>
+            )}
 
-            <div className="ps-settings-row">
-              <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Plan</div>
-                <div className="ps-settings-row-desc">Change plans or redeem a promotional code on the web</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="ps-badge ps-badge-gray">
-                  {TIER_LABEL[tier] ?? session.plan}
-                </span>
-                {tier !== 'pro_plus' && (
+            {section === 'appearance' && (
+              <section className="ps-card ps-settings-section">
+                <div className="ps-settings-section-title">Appearance</div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Theme</div>
+                    <div className="ps-settings-row-desc">
+                      Kexoz desktop uses the Obsidian + Lime dark theme only.
+                    </div>
+                  </div>
+                  <span className="ps-badge ps-badge-gray">Dark</span>
+                </div>
+              </section>
+            )}
+
+            {section === 'notifications' && (
+              <section className="ps-card ps-settings-section">
+                <div className="ps-settings-section-title">Notifications</div>
+                <ToggleRow
+                  label="Desktop notifications"
+                  desc="OS notifications for new feedback while Kexoz is running"
+                  checked={desktopNotify}
+                  onChange={setDesktopNotify}
+                />
+                <ToggleRow
+                  label="Assignment updates"
+                  desc="Notify you when a teammate assigns feedback to your email."
+                  checked={assignmentNotify}
+                  onChange={setAssignmentNotify}
+                />
+              </section>
+            )}
+
+            {section === 'developer' && (
+              <section className="ps-card ps-settings-section">
+                <div className="ps-settings-section-title">Developer</div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">CLI</div>
+                    <div className="ps-settings-row-desc">
+                      Run <code style={{ color: 'var(--accent)' }}>kexoz</code> from a terminal alongside this app for the same workspace.
+                    </div>
+                  </div>
+                </div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Mobile Preview</div>
+                    <div className="ps-settings-row-desc">
+                      Android emulator/device and iPhone / Simulator preview are coming soon. Share websites and APIs today.
+                    </div>
+                  </div>
+                </div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Client ID</div>
+                    <div className="ps-settings-row-desc" style={{ fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+                      {session.id}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="ps-btn ps-btn-secondary ps-btn-sm"
+                    onClick={() => void copy('client-id', session.id)}
+                  >
+                    {copied === 'client-id' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {section === 'billing' && (
+              <section className="ps-card ps-settings-section">
+                <div className="ps-settings-section-title">Billing</div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Plan & invoices</div>
+                    <div className="ps-settings-row-desc">Billing and usage on the web account.</div>
+                  </div>
                   <a
-                    className="ps-btn ps-btn-primary ps-btn-sm"
-                    href={upgradeUrl(session.id, tier === 'pro' ? 'pro_plus' : 'pro')}
+                    className="ps-btn ps-btn-secondary ps-btn-sm"
+                    href={`https://${ROOT_DOMAIN}/account?clientId=${encodeURIComponent(session.id)}`}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Upgrade plan
+                    Open billing
                   </a>
-                )}
-              </div>
-            </div>
-
-            <div className="ps-settings-row">
-              <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Google account</div>
-                <div className="ps-settings-row-desc">
-                  {session.ownerEmail
-                    ? `Signed in as ${session.ownerEmail}`
-                    : gauthEnabled
-                      ? 'Sign in for the full free plan and redeem codes.'
-                      : 'Google sign-in isn’t available right now.'}
                 </div>
-              </div>
-              {session.ownerEmail ? (
-                <button type="button" className="ps-btn ps-btn-text-danger ps-btn-sm" onClick={onSignOut}>
-                  Sign out
-                </button>
-              ) : gauthEnabled && (
-                <button
-                  className="ps-btn ps-btn-secondary ps-btn-sm"
-                  onClick={onVerify}
-                  disabled={verifying}
-                >
-                  {verifying ? 'Check your browser…' : 'Sign in with Google'}
-                </button>
-              )}
-            </div>
+                {tier !== 'pro_plus' && (
+                  <div className="ps-settings-row">
+                    <div className="ps-settings-row-info">
+                      <div className="ps-settings-row-label">Upgrade</div>
+                      <div className="ps-settings-row-desc">More concurrent previews and feedback capacity.</div>
+                    </div>
+                    <a
+                      className="ps-btn ps-btn-primary ps-btn-sm"
+                      href={upgradeUrl(session.id, tier === 'pro' ? 'pro_plus' : 'pro')}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Upgrade plan
+                    </a>
+                  </div>
+                )}
+              </section>
+            )}
 
-            <div className="ps-settings-row">
-              <div className="ps-settings-row-info">
-                <div className="ps-settings-row-label">Web account</div>
-                <div className="ps-settings-row-desc">Billing, invoices and usage history in your browser</div>
-              </div>
-              <a
-                className="ps-btn ps-btn-secondary ps-btn-sm"
-                href={`https://${ROOT_DOMAIN}/account?clientId=${encodeURIComponent(session.id)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open in browser
-              </a>
-            </div>
-          </section>
-
-          <TeamSection clientId={session.id} signedIn={Boolean(session.ownerEmail)} onVerify={onVerify} verifying={verifying} gauthEnabled={gauthEnabled} />
+            {section === 'security' && (
+              <section className="ps-card ps-settings-section animate-fade-in">
+                <div className="ps-settings-section-title">Security</div>
+                <div className="ps-settings-row">
+                  <div className="ps-settings-row-info">
+                    <div className="ps-settings-row-label">Sign out</div>
+                    <div className="ps-settings-row-desc">Clears Google sign-in on this install. Local shares stay until you remove them.</div>
+                  </div>
+                  {session.ownerEmail ? (
+                    <button type="button" className="ps-btn ps-btn-text-danger ps-btn-sm" onClick={onSignOut}>
+                      Sign out
+                    </button>
+                  ) : (
+                    <span className="ps-badge ps-badge-gray">Guest</span>
+                  )}
+                </div>
+                <TrustNote title="What sign-out does" tone="warn">
+                  You leave the team and billing account on this computer. Running shares keep working until you stop them.
+                </TrustNote>
+              </section>
+            )}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-function TeamSection({ clientId, signedIn, onVerify, verifying, gauthEnabled }: {
-  clientId: string
-  signedIn: boolean
-  onVerify: () => void
-  verifying: boolean
-  gauthEnabled: boolean
-}) {
-  const [members, setMembers] = useState<TeamMember[]>([])
-  const [shared, setShared] = useState<SharedWorkspace[]>([])
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'editor' | 'viewer'>('editor')
-  const [busy, setBusy] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-
-  const refresh = async () => {
-    const [nextMembers, nextShared] = await Promise.all([
-      listTeam(clientId),
-      listSharedWorkspaces(clientId),
-    ])
-    setMembers(nextMembers)
-    setShared(nextShared)
-    setLoaded(true)
-  }
-
-  useEffect(() => {
-    let alive = true
-    refresh().catch(err => { if (alive) toast.error(extractError(err)) })
-    return () => { alive = false }
-  }, [clientId])
-
-  const invite = async () => {
-    const value = email.trim()
-    if (!value) return
-    setBusy(true)
-    try {
-      const invite = await inviteTeamMember(clientId, value, role)
-      setEmail('')
-      await refresh()
-      try {
-        await navigator.clipboard.writeText(invite.inviteUrl)
-        toast.success(`Invite link copied for ${invite.email}`)
-      } catch {
-        toast.success(`Invite created for ${invite.email}`)
-      }
-    } catch (err) {
-      toast.error(extractError(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const remove = async (member: TeamMember) => {
-    setBusy(true)
-    try {
-      await revokeTeamMember(clientId, member.id)
-      await refresh()
-      toast.success(`Removed ${member.email}`)
-    } catch (err) {
-      toast.error(extractError(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
+function ToggleRow({
+  label, desc, checked, onChange,
+}: { label: string; desc: string; checked: boolean; onChange: (next: boolean) => void }) {
   return (
-    <section className="ps-card ps-settings-section">
-      <div className="ps-settings-section-title">Team</div>
-      <p className="ps-settings-row-desc" style={{ marginBottom: 12 }}>
-        Invite teammates by email. They accept on the web, then can open shared workspaces from this app.
-      </p>
-
-      {!signedIn ? (
-        <div className="ps-settings-row">
-          <div className="ps-settings-row-info">
-            <div className="ps-settings-row-label">Sign in required</div>
-            <div className="ps-settings-row-desc">Google sign-in is needed before you can invite people.</div>
-          </div>
-          {gauthEnabled && (
-            <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onVerify} disabled={verifying}>
-              {verifying ? 'Check your browser…' : 'Sign in with Google'}
-            </button>
-          )}
-        </div>
-      ) : (
-        <>
-          <form
-            className="ps-settings-row"
-            style={{ alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}
-            onSubmit={event => { event.preventDefault(); void invite() }}
-          >
-            <div style={{ flex: '1 1 180px' }}>
-              <label className="ps-label" htmlFor="team-email">Email</label>
-              <input id="team-email" className="ps-input" type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="teammate@company.com" autoComplete="off" />
-            </div>
-            <div>
-              <label className="ps-label" htmlFor="team-role">Role</label>
-              <select id="team-role" className="ps-select" value={role} onChange={event => setRole(event.target.value as 'editor' | 'viewer')}>
-                <option value="editor">Editor</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </div>
-            <button type="submit" className="ps-btn ps-btn-primary ps-btn-sm" disabled={busy || !email.trim()}>
-              {busy ? 'Inviting…' : 'Invite'}
-            </button>
-          </form>
-
-          {!loaded ? (
-            <p className="ps-settings-row-desc">Loading team…</p>
-          ) : members.length === 0 ? (
-            <p className="ps-settings-row-desc">No teammates yet.</p>
-          ) : (
-            <ul className="ps-share-notes" style={{ marginTop: 12 }}>
-              {members.map(member => (
-                <li key={member.id}>
-                  <div className="ps-feedback-meta" style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <span>
-                      <strong>{member.email}</strong>
-                      {' · '}
-                      {member.role}
-                      {' · '}
-                      {member.status === 'pending' ? 'Pending' : 'Active'}
-                    </span>
-                    <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void remove(member)}>
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-
-      {shared.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div className="ps-settings-row-label">Shared with you</div>
-          <ul className="ps-share-notes" style={{ marginTop: 8 }}>
-            {shared.map(workspace => (
-              <li key={workspace.ownerClientId}>
-                <strong>{workspace.ownerEmail || 'Teammate workspace'}</strong>
-                {' · '}
-                {workspace.role}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
+    <div className="ps-settings-row ps-ns-toggle-row">
+      <div className="ps-settings-row-info">
+        <div className="ps-settings-row-label">{label}</div>
+        <div className="ps-settings-row-desc">{desc}</div>
+      </div>
+      <label className="ps-toggle">
+        <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+        <span className="ps-toggle-track" />
+      </label>
+    </div>
   )
 }

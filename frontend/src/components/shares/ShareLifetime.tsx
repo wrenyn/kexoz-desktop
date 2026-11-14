@@ -7,6 +7,7 @@ import {
 import { shareUrl } from '../../lib/shares'
 import { extractError } from '../../lib/utils'
 import { useCopy } from '../../hooks/useCopy'
+import LoadingBlock from '../ui/LoadingBlock'
 
 const KEEP_OPTIONS = [
   { duration: '1h', label: '1 hour' },
@@ -235,15 +236,16 @@ export function GuestSessions({ clientId, tunnel }: { clientId: string; tunnel: 
   return (
     <div className="ps-guest-sessions">
       <div className="ps-guest-sessions-head">
-        <span className="ps-panel-section-subtitle">Signed in now</span>
-        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void revokeAll()}>
+        <span className="ps-panel-section-subtitle">Who is signed in</span>
+        <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-btn-text-danger" disabled={busy} onClick={() => void revokeAll()} title="Ends every visitor session immediately">
           Sign everyone out
         </button>
       </div>
+      <p className="ps-panel-hint">Use this when a review ends or someone should lose access without changing the password.</p>
       {sessions === null ? (
-        <p className="ps-panel-hint">Loading…</p>
+        <LoadingBlock label="Loading sessions" compact rows={2} />
       ) : sessions.length === 0 ? (
-        <p className="ps-panel-hint">Nobody has signed in during the last week. Signing everyone out also ends sessions from before Kexoz tracked them.</p>
+        <p className="ps-panel-hint">Nobody has signed in during the last week. Signing everyone out also ends older sessions Kexoz still remembers.</p>
       ) : (
         <ul className="ps-guest-list">
           {sessions.map(session => (

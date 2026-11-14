@@ -1,22 +1,27 @@
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/animations.css'
+import './styles/experience.css'
 
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Toaster, toast } from 'react-hot-toast'
 import axios from 'axios'
 
 import {
-  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel, type Project, type ShareAccess,
+  type ClientSession, type ConnectionState, type FlowStep, type PersistentTunnel, type PreviewNote, type Project, type ShareAccess,
   API_BASE_URL, ROOT_DOMAIN,
   ensureClientIdentity, checkSubdomainAvailability, claimSubdomain,
   updateExposedPort, updateCustomDomain, fetchClientStats,
   googleLinkLoginUrl, fetchLinkStatus, startGoogleLink,
   listTunnels, createTunnel, updateTunnel, deleteTunnel, setTunnelPaused,
-  addDomain, removeDomain, type PathRoute
+  listPreviewNotes, addDomain, removeDomain, type PathRoute
 } from './lib/api'
 import { addressHolder, extraRoutes, isGatedType, isSupportedType, routesForShare, shareLabel, shareStatus, shareUrl, type NewShareRequest } from './lib/shares'
+import {
+  clearMobileBinding, clearMobileSession, readMobileSerial, readMobileSessionId,
+  saveMobileBinding,
+} from './lib/mobilePreview'
 import { useConnectionHistory } from './hooks/useConnectionHistory'
 import { clearClientId, getClientId, setClientId } from './lib/storage'
 import { normalizeSubdomain, extractError } from './lib/utils'
@@ -34,33 +39,49 @@ import { NAV_ITEMS, type Page } from './lib/navigation'
 import LoadingScreen from './components/screens/LoadingScreen'
 import GateScreen from './components/screens/GateScreen'
 import SubdomainScreen from './components/screens/SubdomainScreen'
-import DashboardPage from './components/pages/DashboardPage'
-import ProjectsPage from './components/pages/ProjectsPage'
+import WelcomePanel from './components/dashboard/WelcomePanel'
 import type { ShareControls } from './components/shares/ShareList'
-import RequestsPage from './components/pages/RequestsPage'
-import ReviewPage from './components/pages/ReviewPage'
-import InboxPage from './components/pages/InboxPage'
-import DomainsPage from './components/pages/DomainsPage'
-import SettingsPage from './components/pages/SettingsPage'
 import NewShareModal from './components/modals/NewShareModal'
+
+import LoadingBlock from './components/ui/LoadingBlock'
+
+const DashboardPage = lazy(() => import('./components/pages/DashboardPage'))
+const ProjectsPage = lazy(() => import('./components/pages/ProjectsPage'))
+const RequestsPage = lazy(() => import('./components/pages/RequestsPage'))
+const ReviewPage = lazy(() => import('./components/pages/ReviewPage'))
+const DomainsPage = lazy(() => import('./components/pages/DomainsPage'))
+const SettingsPage = lazy(() => import('./components/pages/SettingsPage'))
+const TeamPage = lazy(() => import('./components/pages/TeamPage'))
+const AccountPage = lazy(() => import('./components/pages/AccountPage'))
 
 const TOAST_OPTIONS = {
   duration: 3500,
+  className: 'ps-toast',
   style: {
-    boxShadow: 'var(--shadow-md)',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent)',
     background: 'var(--bg-elevated)',
     color: 'var(--text)',
     border: '1px solid var(--border-bright)',
-    borderRadius: 10,
-    padding: '10px 14px',
-    maxWidth: 380,
+    borderRadius: 12,
+    padding: '12px 16px',
+    maxWidth: 400,
     fontSize: 13,
     fontWeight: 500,
     lineHeight: 1.45,
   },
-  success: { iconTheme: { primary: 'var(--green)', secondary: 'var(--bg-elevated)' } },
-  error: { duration: 6000, iconTheme: { primary: 'var(--red)', secondary: 'var(--bg-elevated)' } },
-  loading: { iconTheme: { primary: 'var(--text-muted)', secondary: 'var(--border)' } },
+  success: {
+    className: 'ps-toast ps-toast-success',
+    iconTheme: { primary: 'var(--green)', secondary: 'var(--bg-elevated)' },
+  },
+  error: {
+    duration: 6000,
+    className: 'ps-toast ps-toast-error',
+    iconTheme: { primary: 'var(--red)', secondary: 'var(--bg-elevated)' },
+  },
+  loading: {
+    className: 'ps-toast ps-toast-loading',
+    iconTheme: { primary: 'var(--accent)', secondary: 'var(--bg-elevated)' },
+  },
 }
 
 /** Moves share names that older versions kept on this computer to the account. */
@@ -89,8 +110,10 @@ export default function App() {
   const [activePage, setActivePage] = useState<Page>(() => {
     // Return to the page the operator was last on after a restart.
     const saved = window.localStorage.getItem('kexoz-active-page')
-    return (NAV_ITEMS.some(item => item.id === saved) ? saved : 'projects') as Page
+    if (saved === 'inbox') return 'projects'
+    return (NAV_ITEMS.some(item => item.id === saved) ? saved : 'dashboard') as Page
   })
+  const [overviewNotes, setOverviewNotes] = useState<PreviewNote[]>([])
   const [session, setSession] = useState<ClientSession | null>(null)
 
   useEffect(() => {
@@ -134,18 +157,39 @@ export default function App() {
   const [reviewNoteId, setReviewNoteId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (reviewTunnelId) window.localStorage.setItem('kexoz-review-share', reviewTunnelId)
-  }, [reviewTunnelId])
-
-  const [inboxProjectId, setInboxProjectId] = useState<string | null>(() => window.localStorage.getItem('kexoz-inbox-project'))
+    if (!session?.id) { setOverviewNotes([]); return }
+    let alive = true
+    const load = () => {
+      listPreviewNotes(session.id).then(notes => { if (alive) setOverviewNotes(notes) }).catch(() => undefined)
+    }
+    load()
+    const id = window.setInterval(load, 60000)
+    return () => { alive = false; window.clearInterval(id) }
+  }, [session?.id, openFeedback])
 
   useEffect(() => {
-    if (inboxProjectId) window.localStorage.setItem('kexoz-inbox-project', inboxProjectId)
-  }, [inboxProjectId])
+    const unsub = window.kexoz?.onTrayAction?.((action) => {
+      if (action === 'new-share') {
+        setActivePage('projects')
+        setShowNewTunnel(true)
+        return
+      }
+      if (action === 'feedback') { setActivePage('review'); return }
+      if (action === 'overview') { setActivePage('dashboard'); return }
+      if (action === 'projects') { setActivePage('projects'); return }
+      if (action === 'show') { /* window already shown by main */ }
+    })
+    return () => { unsub?.() }
+  }, [])
+
+  useEffect(() => {
+    if (reviewTunnelId) window.localStorage.setItem('kexoz-review-share', reviewTunnelId)
+  }, [reviewTunnelId])
 
   // Ctrl/Cmd+number jumps between pages in sidebar order; Ctrl/Cmd+N starts a new share.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
       const target = event.target as HTMLElement | null
       if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return
@@ -459,7 +503,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 2000))
         if (verifyAttempt.current !== attempt) return
         if (Date.now() > deadline) {
-          toast.error('Sign-in timed out. Try again.', { id: 'google-signin' })
+          toast.error('Sign-in timed out. Try again.', { id: 'google-signin', duration: 6000 })
           return
         }
         try {
@@ -470,7 +514,8 @@ export default function App() {
             tunnelConnections.current.clear()
             setClientId(status.switchTo)
             void bootstrapClient()
-            toast.success(`Signed in as ${status.email}.`, { id: 'google-signin' })
+            // Explicit duration: replacing a loading toast with Infinity otherwise sticks forever.
+            toast.success(`Signed in as ${status.email}.`, { id: 'google-signin', duration: 3500 })
             return
           }
           if (status.linked) {
@@ -481,7 +526,7 @@ export default function App() {
             setPortInput(fresh.port ? String(fresh.port) : '')
             setSubdomainInput(fresh.subdomain)
             setDomainInput(fresh.customDomain)
-            toast.success('Signed in. You now have the full free plan.', { id: 'google-signin' })
+            toast.success('Signed in. You now have the full free plan.', { id: 'google-signin', duration: 3500 })
             setStep(cur => cur === 'gate' ? (fresh.subdomain ? 'dashboard' : 'subdomain') : cur)
             return
           }
@@ -651,24 +696,69 @@ export default function App() {
 
   type RunOptions = { switchConfirmed?: boolean; quiet?: boolean }
 
+  const stopMobileAgent = (tunnelId: string) => {
+    const sid = readMobileSessionId(tunnelId)
+    if (sid) void window.kexoz?.mobilePreviewStop?.(sid)
+    clearMobileSession(tunnelId)
+  }
+
+  const ensureMobileAgent = async (tunnel: PersistentTunnel): Promise<PersistentTunnel> => {
+    if (tunnel.tunnelType !== 'mobile') return tunnel
+    const serial = readMobileSerial(tunnel.id)
+    if (!serial) {
+      throw new Error('This Android share has no device saved on this computer. Create a new Android Preview share.')
+    }
+    const existingId = readMobileSessionId(tunnel.id)
+    if (existingId) {
+      const sessions = await window.kexoz?.mobileSessions?.()
+      const live = (sessions || []).find(s => s.id === existingId && s.serial === serial)
+      if (live?.port) {
+        if (live.port !== tunnel.port && session) {
+          return updateTunnel(session.id, { ...tunnel, port: live.port, pathRoutes: [{ path: '/', port: live.port }], preview: true })
+        }
+        return { ...tunnel, port: live.port, preview: true }
+      }
+    }
+    stopMobileAgent(tunnel.id)
+    const started = await window.kexoz?.mobilePreviewStart?.({ serial })
+    if (!started?.ok || !started.port || !started.sessionId) {
+      throw new Error(started?.message || 'Could not connect to the Android device. Check USB debugging or start the emulator.')
+    }
+    saveMobileBinding(tunnel.id, started.sessionId, {
+      serial,
+      model: started.info?.model,
+      androidVersion: started.info?.androidVersion,
+      width: started.info?.width,
+      height: started.info?.height,
+    })
+    if (started.port !== tunnel.port && session) {
+      return updateTunnel(session.id, { ...tunnel, port: started.port, pathRoutes: [{ path: '/', port: started.port }], preview: true })
+    }
+    return { ...tunnel, port: started.port, preview: true }
+  }
+
   const startPersistentTunnel = async (tunnel: PersistentTunnel, options: RunOptions = {}): Promise<boolean> => {
     if (!session) return false
     const holder = addressHolder(persistentTunnelsRef.current, tunnel)
     if (holder && !options.switchConfirmed && !await confirmSwitch(tunnel)) return false
     setIsBusy(true)
     try {
-      selectPersistentTunnel(tunnel)
-      const updated = await updateTunnel(session.id, { ...tunnel, active: true })
+      const ready = await ensureMobileAgent(tunnel)
+      selectPersistentTunnel(ready)
+      const updated = await updateTunnel(session.id, { ...ready, active: true })
       setPersistentTunnels(current => current.map(item => item.id === updated.id ? updated : item))
       connectShare(session.id, updated)
       if (holder) await refreshTunnels()
       if (!options.quiet) {
         toast.success(holder
           ? `Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}. ${shareLabel(holder)} is paused.`
-          : `Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}`)
+          : updated.tunnelType === 'mobile'
+            ? `Android Preview live on ${shareUrl(updated).replace(/^https:\/\//, '')}`
+            : `Sharing on ${shareUrl(updated).replace(/^https:\/\//, '')}`)
       }
       return true
     } catch (err) {
+      if (tunnel.tunnelType === 'mobile') stopMobileAgent(tunnel.id)
       toast.error(extractError(err))
       return false
     } finally {
@@ -683,6 +773,7 @@ export default function App() {
       await updateTunnel(session.id, { ...tunnel, active: false })
       setPersistentTunnels(current => current.map(item => item.id === tunnel.id ? { ...item, active: false, status: item.status === 'active' ? 'stopped' : item.status } : item))
       closeConnection(tunnel.id)
+      if (tunnel.tunnelType === 'mobile') stopMobileAgent(tunnel.id)
       if (tunnel.id === selectedTunnelId) tunnelClose.current = null
       if (!options.quiet) toast.success(`Stopped ${shareUrl(tunnel).replace(/^https:\/\//, '')}`)
     } catch (err) {
@@ -711,6 +802,10 @@ export default function App() {
         setSelectedTunnelId(null)
       }
       closeConnection(tunnel.id)
+      if (tunnel.tunnelType === 'mobile') {
+        stopMobileAgent(tunnel.id)
+        clearMobileBinding(tunnel.id)
+      }
       setPersistentTunnels(current => current.filter(item => item.id !== tunnel.id))
       toast.success('Share deleted')
     } catch (err) {
@@ -886,6 +981,8 @@ export default function App() {
 
   const createShare = async (request: NewShareRequest) => {
     if (!session) return
+    let mobileSessionId = ''
+    let mobileMeta: { model?: string; androidVersion?: string; width?: number; height?: number } | undefined
     try {
       let projectId = request.projectId
       if (!projectId && request.newProjectName) {
@@ -893,7 +990,20 @@ export default function App() {
         if (!projectId) throw new Error('Could not create the project. Try again.')
       }
       const name = normalizeSubdomain(request.subdomain)
-      const port = request.port
+      let port = request.port
+      if (request.tunnelType === 'mobile') {
+        if (!request.mobileSerial) throw new Error('Select an Android device or emulator.')
+        const started = await window.kexoz?.mobilePreviewStart?.({ serial: request.mobileSerial })
+        if (!started?.ok || !started.port) {
+          throw new Error(started?.message || 'Could not start Android Preview on this device.')
+        }
+        mobileSessionId = started.sessionId || ''
+        mobileMeta = started.info
+        port = started.port
+        if (started.info?.model && !request.name) {
+          request = { ...request, name: `${started.info.model} preview` }
+        }
+      }
       const created = await createTunnel(session.id, {
         name: request.name,
         projectId: projectId || undefined,
@@ -907,9 +1017,18 @@ export default function App() {
         permissions: request.permissions,
         password: request.password,
         duration: request.duration,
-        preview: request.preview,
+        preview: request.tunnelType === 'mobile' ? true : request.preview,
         environment: request.environment,
       })
+      if (mobileSessionId && request.mobileSerial) {
+        saveMobileBinding(created.id, mobileSessionId, {
+          serial: request.mobileSerial,
+          model: mobileMeta?.model,
+          androidVersion: mobileMeta?.androidVersion,
+          width: mobileMeta?.width,
+          height: mobileMeta?.height,
+        })
+      }
       setPersistentTunnels(current => [...current, created])
       setShowNewTunnel(false)
       if (projectId) {
@@ -918,7 +1037,11 @@ export default function App() {
         setOpenProjectId(projectId)
       }
       await startPersistentTunnel(created, { switchConfirmed: true })
+      if (request.tunnelType === 'mobile') {
+        toast.success('Android Preview is live. Share the link — clients can request control in the browser.')
+      }
     } catch (err) {
+      if (mobileSessionId) void window.kexoz?.mobilePreviewStop?.(mobileSessionId)
       toast.error(extractError(err))
     }
   }
@@ -1062,9 +1185,10 @@ export default function App() {
         )}
 
         {step === 'dashboard' && session && (
-          <>
-            {activePage === 'dashboard' && (
-              <DashboardPage
+          <Suspense fallback={<div className="ps-main"><div className="ps-page-content"><LoadingBlock label="Opening workspace…" /></div></div>}>
+            {activePage === 'dashboard' && (persistentTunnels.length === 0
+              ? <WelcomePanel onNewShare={() => openNewShare()} />
+              : <DashboardPage
                 session={session}
                 tunnels={persistentTunnels}
                 totalRequests={totalRequests}
@@ -1073,9 +1197,11 @@ export default function App() {
                 bytesOut={bytesOut}
                 dailyUsage={dailyUsage}
                 connectionEvents={connectionEvents}
+                feedbackNotes={overviewNotes}
                 onNewShare={() => openNewShare()}
                 onViewRequests={() => setActivePage('requests')}
                 onViewShares={() => { setOpenProjectId(null); setActivePage('projects') }}
+                onViewFeedback={() => setActivePage('review')}
               />
             )}
 
@@ -1095,17 +1221,6 @@ export default function App() {
                 onStartProject={project => void startProject(project)}
                 onStopProject={project => void stopProject(project)}
                 onCreateEnvironment={createProjectEnvironment}
-                onOpenInbox={project => { setInboxProjectId(project.id); setActivePage('inbox') }}
-              />
-            )}
-
-            {activePage === 'inbox' && (
-              <InboxPage
-                clientId={session.id}
-                projects={projectsApi.projects}
-                tunnels={persistentTunnels}
-                selectedId={inboxProjectId}
-                onSelect={setInboxProjectId}
               />
             )}
 
@@ -1144,8 +1259,8 @@ export default function App() {
               />
             )}
 
-            {activePage === 'settings' && (
-              <SettingsPage
+            {activePage === 'team' && (
+              <TeamPage
                 session={session}
                 onVerify={() => void startGoogleVerify()}
                 verifying={verifying}
@@ -1153,7 +1268,29 @@ export default function App() {
                 onSignOut={() => void handleLogout()}
               />
             )}
-          </>
+
+            {activePage === 'account' && (
+              <AccountPage
+                session={session}
+                onVerify={() => void startGoogleVerify()}
+                verifying={verifying}
+                gauthEnabled={gauthEnabled}
+                onSignOut={() => void handleLogout()}
+              />
+            )}
+
+            {activePage === 'settings' && (
+              <SettingsPage
+                session={session}
+                onOpenTeam={() => setActivePage('team')}
+                onOpenAccount={() => setActivePage('account')}
+                onVerify={() => void startGoogleVerify()}
+                verifying={verifying}
+                gauthEnabled={gauthEnabled}
+                onSignOut={() => void handleLogout()}
+              />
+            )}
+          </Suspense>
         )}
       </AppShell>
     </>

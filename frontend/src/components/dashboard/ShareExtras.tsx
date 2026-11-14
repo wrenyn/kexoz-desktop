@@ -4,6 +4,7 @@ import { createReviewLink, updateTunnel, type PersistentTunnel, type PreviewNote
 import { noteColors } from '../../lib/noteColors'
 import { shareUrl } from '../../lib/shares'
 import { extractError } from '../../lib/utils'
+import TrustNote from '../ui/TrustNote'
 
 export function PreviewSetting({ clientId, tunnel, onUpdated }: {
   clientId: string
@@ -62,6 +63,11 @@ export function PreviewSetting({ clientId, tunnel, onUpdated }: {
           </button>
         </div>
       )}
+      {enabled && (
+        <TrustNote title="Why this exists" tone="ok">
+          Reviewers leave notes on the live page so feedback stays with the build — not lost in chat. Turn it off if you only need a plain share link.
+        </TrustNote>
+      )}
     </div>
   )
 }
@@ -99,9 +105,11 @@ export function ShareFeedback({ tunnel, notes, busyId, onStatus, onDelete, onOpe
           <span className="ps-label">Feedback</span>
           <p className="ps-settings-row-desc">
             {notes.length === 0
-              ? tunnel.preview
-                ? 'Send the link to someone. Notes they pin on the page show up here.'
-                : 'Turn on interactive preview to collect notes.'
+              ? tunnel.tunnelType === 'mobile'
+                ? 'Share the preview link. Screenshot notes from the Android viewer show up here.'
+                : tunnel.preview
+                  ? 'Send the link to someone. Notes they pin on the page show up here.'
+                  : 'Turn on interactive preview to collect notes.'
               : open.length > 0
                 ? `${open.length} open ${open.length === 1 ? 'note' : 'notes'}`
                 : 'Every note is fixed.'}

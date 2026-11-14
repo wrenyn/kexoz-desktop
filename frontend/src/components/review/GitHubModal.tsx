@@ -1,3 +1,4 @@
+import { useDialog } from '../../hooks/useDialog'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { connectGitHub, disconnectGitHub, listMyRepos, validRepo, type GitHubStatus } from '../../lib/github'
@@ -15,6 +16,7 @@ type Props = {
 export default function GitHubModal({ status, repo, shareName, onStatus, onRepo, onClose }: Props) {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
+  const dialogRef = useDialog(() => { if (!busy) onClose() })
   const [repoDraft, setRepoDraft] = useState(repo)
   const [repos, setRepos] = useState<string[]>([])
 
@@ -25,11 +27,7 @@ export default function GitHubModal({ status, repo, shareName, onStatus, onRepo,
     return () => { alive = false }
   }, [status.connected])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+
 
   const connect = async () => {
     setBusy(true)
@@ -61,7 +59,7 @@ export default function GitHubModal({ status, repo, shareName, onStatus, onRepo,
 
   return (
     <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="gh-title">
+      <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="gh-title">
         <div className="ps-modal-header">
           <h2 className="ps-modal-title" id="gh-title">GitHub</h2>
         </div>

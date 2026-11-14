@@ -1,15 +1,35 @@
-export type Page = 'dashboard' | 'projects' | 'review' | 'inbox' | 'requests' | 'domains' | 'settings'
+export type Page =
+  | 'dashboard'
+  | 'projects'
+  | 'review'
+  | 'team'
+  | 'inbox'
+  | 'requests'
+  | 'domains'
+  | 'settings'
+  | 'account'
 
-// Sidebar navigation order; App maps Ctrl/Cmd+number onto it. Kept out of the
-// component file so hot reload keeps working for the sidebar itself.
-// Group 1 is everyday work, group 2 is setup; Settings lives in the sidebar footer.
-// Projects come first: every share is created inside one.
-export const NAV_ITEMS: { id: Page; label: string; shortcut: string; group: 1 | 2 | 0 }[] = [
-  { id: 'projects',  label: 'Projects',   shortcut: '1', group: 1 },
-  { id: 'dashboard', label: 'Overview',   shortcut: '2', group: 1 },
-  { id: 'review',    label: 'Review',     shortcut: '3', group: 1 },
-  { id: 'inbox',     label: 'Inbox',      shortcut: '4', group: 1 },
-  { id: 'requests',  label: 'Requests',   shortcut: '5', group: 1 },
-  { id: 'domains',   label: 'Domains',    shortcut: '6', group: 2 },
-  { id: 'settings',  label: 'Settings',   shortcut: '7', group: 0 },
+export type NavSection = 'workspace' | 'tools' | 'bottom'
+
+// Sidebar navigation. App maps Ctrl/Cmd+number onto shortcut fields.
+// Feedback lives here once — not inside share settings. Inbox is retired from the nav.
+export const NAV_ITEMS: {
+  id: Page
+  label: string
+  shortcut: string
+  section: NavSection
+}[] = [
+  { id: 'dashboard', label: 'Overview', shortcut: '1', section: 'workspace' },
+  { id: 'projects', label: 'Projects', shortcut: '2', section: 'workspace' },
+  { id: 'review', label: 'Feedback', shortcut: '3', section: 'workspace' },
+  { id: 'team', label: 'Team', shortcut: '4', section: 'workspace' },
+  { id: 'domains', label: 'Domains', shortcut: '5', section: 'tools' },
+  { id: 'requests', label: 'Traffic', shortcut: '6', section: 'tools' },
+  { id: 'settings', label: 'Settings', shortcut: '7', section: 'bottom' },
+  { id: 'account', label: 'Account', shortcut: '8', section: 'bottom' },
 ]
+
+export const PAGE_IDS = new Set<Page>(NAV_ITEMS.map(item => item.id))
+
+export const isPage = (value: string | null | undefined): value is Page =>
+  !!value && PAGE_IDS.has(value as Page)

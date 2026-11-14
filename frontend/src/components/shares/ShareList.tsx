@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom'
 import type { PathRoute, PersistentTunnel, PreviewNote, Project, ShareAccess } from '../../lib/api'
 import { STATUS_BADGES, TYPE_LABELS, extraRoutes, isGatedType, shareAccess, shareAddress, shareLabel, shareStatus, shareUrl } from '../../lib/shares'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
-import { PreviewSetting, ShareFeedback } from '../dashboard/ShareExtras'
+import { PreviewSetting } from '../dashboard/ShareExtras'
+import MobileShareControls from '../dashboard/MobileShareControls'
 import { AccessLinks, ExpiryEditor, GuestSessions } from './ShareLifetime'
-import ShareAnalyticsSection from './ShareAnalytics'
 import { usePreviewNotes } from '../../hooks/usePreviewNotes'
 import { useCopy } from '../../hooks/useCopy'
+import TrustNote from '../ui/TrustNote'
+import LoadingBlock from '../ui/LoadingBlock'
 
 /** Everything a share row and its settings panel need from the app. */
 export type ShareControls = {
@@ -46,7 +48,10 @@ type ProjectMove = {
 const MIN_PASSWORD = 4
 
 function shareTargets(tunnel: PersistentTunnel): string[] {
-  const routes = tunnel.tunnelType === 'http' || !tunnel.tunnelType ? extraRoutes(tunnel) : []
+  const type = tunnel.tunnelType ?? 'http'
+  if (type === 'mobile') return ['Live device']
+  if (type === 'tcp' || type === 'udp') return tunnel.publicTcpPort ? [`port ${tunnel.publicTcpPort}`] : []
+  const routes = type === 'http' || !tunnel.tunnelType ? extraRoutes(tunnel) : []
   if (routes.length === 0) return [`localhost:${tunnel.port}`]
   return [...routes.map(route => `${route.path} → :${route.port}`), `/ → :${tunnel.port}`]
 }
@@ -169,13 +174,11 @@ function Section({ title, hint, aside, children }: { title: string; hint?: strin
   )
 }
 
-type PanelTab = 'settings' | 'feedback' | 'traffic'
-
 function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: PersistentTunnel; onClose: () => void; feedback: Notes }) {
   const {
     tunnel, onClose, isBusy, clientId, onRenameTunnel, persistentTunnels, projects, onMoveShare,
     portInput, setPortInput, onPortSubmit, portListening, routeRules, onRouteRulesChange, routePortStatus,
-    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, onOpenReview, onOpenNote, feedback,
+    onStartTunnel, onStopTunnel, onPauseTunnel, onDeleteTunnel, onAccessChange, onTunnelUpdated, onOpenReview, feedback,
   } = props
   const sharingAddress = tunnel.subdomain
     ? persistentTunnels.filter(other => other.id !== tunnel.id && other.subdomain === tunnel.subdomain)
@@ -183,17 +186,16 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
   const shareNotes = feedback.notes.filter(note => note.tunnelId === tunnel.id)
   const openNotes = shareNotes.filter(note => note.status !== 'resolved').length
   const [showRoutes, setShowRoutes] = useState(extraRoutes(tunnel).length > 0)
-  const [tab, setTab] = useState<PanelTab>('settings')
   const { copied, copy } = useCopy()
   const type = tunnel.tunnelType ?? 'http'
   const isWeb = type === 'http'
+  const isMobile = type === 'mobile'
   const status = shareStatus(tunnel)
   const badge = STATUS_BADGES[status]
   const access = shareAccess(tunnel)
   const name = tunnel.name?.trim()
   const url = shareUrl(tunnel)
   const project = projects?.find(item => item.tunnelIds.includes(tunnel.id))
-  const activeTab: PanelTab = isWeb ? tab : 'settings'
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
@@ -202,14 +204,8 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
   }, [onClose])
 
   const accessHint =
-    access === 'public' ? 'Anyone who has the link can open it.' :
-    'Visitors type the password once, then the share opens.'
-
-  const tabs: { id: PanelTab; label: string; count?: number }[] = [
-    { id: 'settings', label: 'Settings' },
-    { id: 'feedback', label: 'Feedback', count: openNotes },
-    { id: 'traffic', label: 'Traffic' },
-  ]
+    access === 'public' ? 'Anyone who has the link can open it. Stop sharing anytime to cut access.' :
+    'Visitors type the password once, then the share opens. Revoke guest sessions below if someone should lose access.'
 
   // Page content animates with a transform, which would pin a fixed panel inside it.
   return createPortal(
@@ -223,7 +219,6 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
               <span className={`ps-badge ${badge.className}`}>{badge.label}</span>
               <span>{TYPE_LABELS[type]}</span>
               {project && <span>in {project.name}</span>}
-              {tunnel.environment && <span>{tunnel.environment}</span>}
             </div>
           </div>
           <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onClose}>Close</button>
@@ -251,7 +246,16 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
             <ExpiryEditor key={`${tunnel.id}-${tunnel.expiresAt ?? ''}`} clientId={clientId} tunnel={tunnel} onUpdated={onTunnelUpdated} />
           </div>
           {status === 'expired' && <p className="ps-panel-hint">This share has expired. Give it more time to share again.</p>}
-          {portListening !== null && (
+          {isMobile ? (
+            <p className={`ps-panel-port-line ${tunnel.active ? 'listening' : 'offline'}`}>
+              <span className="ps-share-dot" aria-hidden="true" />
+              {tunnel.active
+                ? 'Android Preview agent is serving this link from your device'
+                : 'Start sharing to reconnect the Android Preview agent'}
+            </p>
+          ) : portListening === null ? (
+            <LoadingBlock label="Checking localhost" compact rows={1} />
+          ) : (
             <p className={`ps-panel-port-line ${portListening ? 'listening' : 'offline'}`}>
               <span className="ps-share-dot" aria-hidden="true" />
               {portListening ? `Your app is running on localhost:${tunnel.port}` : `Nothing is running on localhost:${tunnel.port} yet`}
@@ -265,117 +269,123 @@ function SharePanel(props: ShareControls & Partial<ProjectMove> & { tunnel: Pers
           )}
         </div>
 
-        {isWeb && (
-          <div className="ps-panel-tabs" role="tablist" aria-label="Share sections">
-            {tabs.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === item.id}
-                className={`ps-panel-tab ${activeTab === item.id ? 'active' : ''}`}
-                onClick={() => setTab(item.id)}
-              >
-                {item.label}
-                {item.count ? <span className="ps-panel-tab-count">{item.count}</span> : null}
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="ps-panel-body">
-          {activeTab === 'settings' && (
-            <>
-              {isGatedType(type) ? (
-                <Section title="Who can open it" hint={accessHint}>
-                  <AccessEditor key={`${tunnel.id}-${access}-${tunnel.password ?? ''}`} tunnel={tunnel} isBusy={isBusy} onSave={(next, password) => onAccessChange(tunnel, next, password)} />
-                  {access === 'private' && tunnel.password && <AccessLinks clientId={clientId} tunnel={tunnel} />}
-                  {access === 'private' && <GuestSessions clientId={clientId} tunnel={tunnel} />}
-                </Section>
-              ) : (
-                <Section title="Who can open it" hint={type === 'e2e'
-                  ? 'Anyone with the link. Traffic is encrypted all the way to your computer.'
-                  : 'Anyone who has the address and port can connect.'} />
+          {isGatedType(type) ? (
+            <Section title="Who can open it" hint={accessHint}>
+              <AccessEditor key={`${tunnel.id}-${access}-${tunnel.password ?? ''}`} tunnel={tunnel} isBusy={isBusy} onSave={(next, password) => onAccessChange(tunnel, next, password)} />
+              {access === 'private' && tunnel.password && <AccessLinks clientId={clientId} tunnel={tunnel} />}
+              {access === 'private' && <GuestSessions clientId={clientId} tunnel={tunnel} />}
+              {access === 'public' && (
+                <TrustNote title="Public link" tone="warn">
+                  No password gate. Prefer password access for builds with private data, or stop the share when the review is done.
+                </TrustNote>
               )}
-
-              <Section title="Your app" hint={isWeb ? 'The port that serves every path you haven’t routed elsewhere.' : 'The port on this computer that visitors reach.'}>
-                <form onSubmit={onPortSubmit} className="ps-panel-port">
-                  <div className="ps-input-group">
-                    <span className="ps-input-prefix">localhost:</span>
-                    <input
-                      className="ps-input ps-input-mono"
-                      value={portInput}
-                      onChange={event => setPortInput(event.target.value)}
-                      placeholder="3000"
-                      type="number"
-                      min={1}
-                      max={65535}
-                      aria-label="Local port"
-                    />
-                  </div>
-                  {portInput !== String(tunnel.port) && (
-                    <button type="submit" className="ps-btn ps-btn-secondary ps-btn-sm" disabled={isBusy}>Apply</button>
-                  )}
-                </form>
-                {isWeb && (
-                  <>
-                    <button type="button" className="ps-panel-disclosure" onClick={() => setShowRoutes(v => !v)} aria-expanded={showRoutes}>
-                      {showRoutes ? 'Hide path routing' : 'Send /api or other paths to another port'}
-                    </button>
-                    {showRoutes && (
-                      <RouteRulesEditor rules={routeRules} onChange={onRouteRulesChange} fallbackPort={tunnel.port} portStatus={routePortStatus} />
-                    )}
-                  </>
-                )}
-                {type === 'e2e' && (
-                  <>
-                    <p className="ps-panel-hint">Run this with the Kexoz CLI to start it:</p>
-                    <div className="ps-code">kexoz e2e {portInput || tunnel.port} --subdomain {tunnel.subdomain}</div>
-                  </>
-                )}
-              </Section>
-
-              {projects && onMoveShare && (
-                <Section title="Project" hint="Shares in a project start and stop together.">
-                  <select
-                    className="ps-select ps-panel-project"
-                    value={project?.id ?? ''}
-                    aria-label="Project"
-                    disabled={isBusy}
-                    onChange={event => onMoveShare(tunnel, event.target.value)}
-                  >
-                    <option value="">Not in a project</option>
-                    {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                </Section>
+              {access === 'private' && (
+                <TrustNote title="You stay in control" tone="ok">
+                  Stop sharing ends the link immediately. Guest sessions list who is signed in so you can kick anyone out.
+                </TrustNote>
               )}
-
-              <section className="ps-panel-danger">
-                <div className="ps-panel-section-text">
-                  <h3 className="ps-panel-section-title">Delete share</h3>
-                  <p className="ps-panel-hint">The link stops working. Your address stays yours.</p>
-                </div>
-                <button className="ps-btn ps-btn-danger ps-btn-sm" onClick={() => onDeleteTunnel(tunnel)} disabled={isBusy}>Delete</button>
-              </section>
-            </>
+            </Section>
+          ) : (
+            <Section title="Who can open it" hint={type === 'e2e'
+              ? 'Anyone with the link. Traffic is encrypted all the way to your computer.'
+              : 'Anyone who has the address and port can connect. Keep your service’s own login on.'}>
+              <TrustNote title="Why this warning exists" tone="warn">
+                TCP/UDP shares are not password-gated by Kexoz. Access control must live on the service itself.
+              </TrustNote>
+            </Section>
           )}
 
-          {activeTab === 'feedback' && (
-            <>
+          {isWeb && (
+            <Section title="Visual review" hint="Reviewers pin notes on the live page. Open Feedback to triage them.">
               <PreviewSetting clientId={clientId} tunnel={tunnel} onUpdated={onTunnelUpdated} />
-              <ShareFeedback
-                tunnel={tunnel}
-                notes={shareNotes}
-                busyId={feedback.busyId}
-                onStatus={(note, next) => void feedback.setStatus(note, next)}
-                onDelete={note => void feedback.remove(note)}
-                onOpenReview={onOpenReview ? () => { onClose(); onOpenReview(tunnel) } : undefined}
-                onOpenNote={onOpenNote ? (note) => { onClose(); onOpenNote(tunnel, note) } : undefined}
-              />
-            </>
+              {openNotes > 0 && onOpenReview && (
+                <button
+                  type="button"
+                  className="ps-btn ps-btn-secondary ps-btn-sm"
+                  onClick={() => { onClose(); onOpenReview(tunnel) }}
+                >
+                  Open feedback · {openNotes} open
+                </button>
+              )}
+            </Section>
           )}
 
-          {activeTab === 'traffic' && <ShareAnalyticsSection clientId={clientId} tunnel={tunnel} />}
+          {isMobile ? (
+            <Section title="Android device" hint="Visitors interact with this device through your share link.">
+              <MobileShareControls tunnel={tunnel} isBusy={isBusy} />
+              {openNotes > 0 && onOpenReview && (
+                <button
+                  type="button"
+                  className="ps-btn ps-btn-secondary ps-btn-sm"
+                  style={{ marginTop: 10 }}
+                  onClick={() => { onClose(); onOpenReview(tunnel) }}
+                >
+                  Open feedback · {openNotes} open
+                </button>
+              )}
+            </Section>
+          ) : (
+            <Section title="Your app" hint={isWeb ? 'The port that serves every path you haven’t routed elsewhere.' : 'The port on this computer that visitors reach.'}>
+              <form onSubmit={onPortSubmit} className="ps-panel-port">
+                <div className="ps-input-group">
+                  <span className="ps-input-prefix">localhost:</span>
+                  <input
+                    className="ps-input ps-input-mono"
+                    value={portInput}
+                    onChange={event => setPortInput(event.target.value)}
+                    placeholder="3000"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    aria-label="Local port"
+                  />
+                </div>
+                {portInput !== String(tunnel.port) && (
+                  <button type="submit" className="ps-btn ps-btn-secondary ps-btn-sm" disabled={isBusy}>Apply</button>
+                )}
+              </form>
+              {isWeb && (
+                <>
+                  <button type="button" className="ps-panel-disclosure" onClick={() => setShowRoutes(v => !v)} aria-expanded={showRoutes}>
+                    {showRoutes ? 'Hide path routing' : 'Send /api or other paths to another port'}
+                  </button>
+                  {showRoutes && (
+                    <RouteRulesEditor rules={routeRules} onChange={onRouteRulesChange} fallbackPort={tunnel.port} portStatus={routePortStatus} />
+                  )}
+                </>
+              )}
+              {type === 'e2e' && (
+                <>
+                  <p className="ps-panel-hint">Run this with the Kexoz CLI to start it:</p>
+                  <div className="ps-code">kexoz e2e {portInput || tunnel.port} --subdomain {tunnel.subdomain}</div>
+                </>
+              )}
+            </Section>
+          )}
+
+          {projects && onMoveShare && (
+            <Section title="Project" hint="Shares in a project start and stop together.">
+              <select
+                className="ps-select ps-panel-project"
+                value={project?.id ?? ''}
+                aria-label="Project"
+                disabled={isBusy}
+                onChange={event => onMoveShare(tunnel, event.target.value)}
+              >
+                <option value="">Not in a project</option>
+                {projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Section>
+          )}
+
+          <section className="ps-panel-danger">
+            <div className="ps-panel-section-text">
+              <h3 className="ps-panel-section-title">Delete share</h3>
+              <p className="ps-panel-hint">The link stops working. Your address stays yours.</p>
+            </div>
+            <button className="ps-btn ps-btn-danger ps-btn-sm" onClick={() => onDeleteTunnel(tunnel)} disabled={isBusy}>Delete</button>
+          </section>
         </div>
       </aside>
     </>,
@@ -403,13 +413,12 @@ function ShareRow({ tunnel, open, openNotes, copied, isBusy, onOpen, onCopy, onS
   const address = shareAddress(tunnel)
   const label = name || address
   const tags = [
-    tunnel.environment || null,
     TYPE_LABELS[type],
     ...shareTargets(tunnel),
     isGatedType(type) ? (shareAccess(tunnel) === 'private' ? 'Password' : 'Public') : null,
   ].filter((tag): tag is string => Boolean(tag))
   return (
-    <li className={`ps-share-row ${status} ${open ? 'open' : ''}`}>
+    <li className={`ps-share-row ${status} ${open ? 'open' : ''} ${type === 'mobile' ? 'is-mobile' : ''}`}>
       <button type="button" className="ps-share-row-main" onClick={onOpen} aria-label={`Open settings for ${label}`}>
         <span className={`ps-share-dot ${status}`} aria-hidden="true" />
         <span className="ps-share-row-text">
@@ -420,7 +429,9 @@ function ShareRow({ tunnel, open, openNotes, copied, isBusy, onOpen, onCopy, onS
           </span>
           {name && <span className="ps-share-row-address">{address}</span>}
           <span className="ps-share-row-tags">
-            {tags.map(tag => <span key={tag} className="ps-share-tag">{tag}</span>)}
+            {tags.map(tag => (
+              <span key={tag} className={`ps-share-tag${tag === 'Android Preview' || tag === 'Live device' ? ' ps-share-tag-accent' : ''}`}>{tag}</span>
+            ))}
           </span>
         </span>
       </button>

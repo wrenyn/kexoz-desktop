@@ -12,7 +12,7 @@
     "make": "npm --prefix ../frontend run build && electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint .",
-    "test": "node --test src/tunnel.test.js src/review.test.js",
+    "test": "node --test src/tunnel.test.js src/review.test.js src/mobile.test.js",
     "e2e": "node scripts/e2e-shares.js"
   },
   "keywords": [],

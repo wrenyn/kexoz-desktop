@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { snapshotObjectUrl, type PreviewSnapshot } from '../../lib/api'
+import Spinner from '../ui/Spinner'
 
 /**
  * A stored screenshot with an optional pin drawn where the note sits.
@@ -36,7 +37,11 @@ export default function Snapshot({ clientId, shot, marker, color, alt, className
     <div className={`ps-rv-shot ${className ?? ''}`} style={{ aspectRatio: visible < 1 ? String(frame) : ratio ? `${shot.width} / ${shot.height}` : undefined }}>
       {src
         ? <img src={src} alt={alt} draggable={false} style={offset ? { transform: `translateY(-${offset * 100}%)` } : undefined} />
-        : <span className="ps-rv-shot-wait">{failed ? 'Screenshot unavailable' : 'Loading…'}</span>}
+        : (
+          <span className="ps-rv-shot-wait">
+            {failed ? 'Screenshot unavailable' : <><Spinner size={16} /> Loading shot</>}
+          </span>
+        )}
       {src && marker && (
         <span className="ps-rv-marker" style={{ left: `${marker.x * 100}%`, top: `${markerTop * 100}%`, background: color }} aria-hidden="true" />
       )}

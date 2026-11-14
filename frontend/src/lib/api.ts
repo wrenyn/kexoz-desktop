@@ -50,7 +50,7 @@ export type PortResponse = { port?: number }
 export type DomainResponse = { customDomain: string; dnsTarget?: string }
 export type PathRoute = { path: string; port: number }
 
-export type TunnelType = 'http' | 'tcp' | 'udp' | 'e2e'
+export type TunnelType = 'http' | 'tcp' | 'udp' | 'e2e' | 'mobile'
 export type ShareAccess = 'public' | 'private'
 export type SharePermissions = 'read' | 'read-write'
 export type ShareStatus = 'active' | 'stopped' | 'paused' | 'expired'
@@ -154,6 +154,10 @@ export const reviewWorkspaceUrl = (clientId: string, projectId?: string): string
   if (!projectId) return `${base}?clientId=${encodeURIComponent(clientId)}`
   return `${base}/projects/${encodeURIComponent(projectId)}?workspace=${encodeURIComponent(clientId)}`
 }
+
+/** Website feedback detail for media/timeline review. */
+export const reviewFeedbackUrl = (clientId: string, projectId: string, noteId: string): string =>
+  `https://${ROOT_DOMAIN}/app/projects/${encodeURIComponent(projectId)}/feedback/${encodeURIComponent(noteId)}?workspace=${encodeURIComponent(clientId)}`
 
 export const tierOf = (session: Pick<ClientSession, 'plan' | 'ownerEmail'>): Tier => {
   if (session.plan === 'pro_plus') return 'pro_plus'
@@ -741,15 +745,48 @@ export const signEveryoneOut = async (clientId: string, tunnelId: string): Promi
   return data.signedOut ?? 0
 }
 
+/** Roles accepted by POST /client/team/invites (server normalizes aliases). */
+export type TeamInviteRole = 'admin' | 'developer' | 'editor' | 'reviewer' | 'viewer'
+
+export type TeamRole = 'admin' | 'developer' | 'editor' | 'reviewer' | 'viewer' | string
+
 export type TeamMember = {
   id: string
   email: string
-  role: 'editor' | 'viewer' | string
+  role: TeamInviteRole | string
   status: 'pending' | 'active' | string
   memberClientId?: string
   inviteToken?: string
   createdAt: string
   acceptedAt?: string
+}
+
+const norm = (role: string) => role.trim().toLowerCase()
+
+/** Desktop UI label for a stored team role. */
+export const teamRoleLabel = (role: string): string => {
+  switch (norm(role)) {
+    case 'admin': return 'Admin'
+    case 'developer':
+    case 'editor': return 'Developer'
+    case 'reviewer': return 'Reviewer'
+    case 'viewer': return 'Viewer'
+    default:
+      return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member'
+  }
+}
+
+/** Pick an invite payload role when re-sending for an existing member. */
+export const teamInviteRoleForMember = (role: string): TeamInviteRole => {
+  switch (norm(role)) {
+    case 'admin': return 'admin'
+    case 'reviewer': return 'reviewer'
+    case 'viewer': return 'viewer'
+    case 'developer':
+    case 'editor':
+    default:
+      return 'developer'
+  }
 }
 
 export type SharedWorkspace = {
@@ -798,7 +835,7 @@ export const listTeam = async (clientId: string): Promise<TeamMember[]> => {
   return data.members ?? []
 }
 
-export const inviteTeamMember = async (clientId: string, email: string, role: 'editor' | 'viewer' = 'editor'): Promise<{ id: string; email: string; role: string; status: string; inviteUrl: string; token: string }> => {
+export const inviteTeamMember = async (clientId: string, email: string, role: TeamInviteRole = 'developer'): Promise<{ id: string; email: string; role: string; status: string; inviteUrl: string; token: string }> => {
   const { data } = await axios.post<{ id: string; email: string; role: string; status: string; inviteUrl: string; token: string }>(`${API_BASE_URL}/client/team/invites`, { clientId, email, role }, { params: { clientId } })
   return data
 }

@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useDialog } from '../../hooks/useDialog'
+import { useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import {
   createRevision, updateRevision, uploadRevisionSnapshot,
   type PersistentTunnel, type PreviewNote, type PreviewRevision,
 } from '../../lib/api'
-import { closeIssueAsFixed, recentChanges, type GitHubLinkOption } from '../../lib/github'
-import { completeLinearIssue } from '../../lib/linear'
 import { normalizeRevision } from '../../hooks/useReview'
-import { pagesToCapture, portForPath } from '../../lib/review'
+import { pagesToCapture, portForPath, revisionName } from '../../lib/review'
 import { extraRoutes } from '../../lib/shares'
 import { extractError } from '../../lib/utils'
 
@@ -23,50 +22,29 @@ type Props = {
   notes: PreviewNote[]
   /** Edit this revision instead of creating one. */
   revision?: PreviewRevision
-  github: { ready: boolean; repo: string }
-  linear?: { ready: boolean; teamId: string }
   onClose: () => void
   onSaved: () => void
 }
 
-const splitLinks = (text: string) => text.split(/\s+/).map(line => line.trim()).filter(Boolean)
-
-export default function RevisionModal({ clientId, tunnel, notes, revision, github, linear, onClose, onSaved }: Props) {
+export default function RevisionModal({ clientId, tunnel, notes, revision, onClose, onSaved }: Props) {
   const editing = Boolean(revision)
   const pending = useMemo(() => notes.filter(note => note.status !== 'resolved'), [notes])
   const [label, setLabel] = useState(revision?.label ?? '')
   const [summary, setSummary] = useState(revision?.summary ?? '')
-  const [links, setLinks] = useState((revision?.links ?? []).map(link => link.url).join('\n'))
   const [fixes, setFixes] = useState<Set<string>>(() => new Set(pending.filter(note => note.status === 'in_progress').map(note => note.id)))
   const [capture, setCapture] = useState(!editing && Boolean(window.kexoz?.capturePage))
   const [width, setWidth] = useState(1280)
-  const [closeIssues, setCloseIssues] = useState(true)
-  const [options, setOptions] = useState<GitHubLinkOption[] | null>(null)
   const [progress, setProgress] = useState('')
   const [busy, setBusy] = useState(false)
+  const dialogRef = useDialog(() => { if (!busy) onClose() })
 
   const fixedNotes = pending.filter(note => fixes.has(note.id))
-  const pages = useMemo(() => pagesToCapture(editing ? notes.filter(note => note.resolvedRevisionId === revision?.id) : fixedNotes), [editing, notes, revision?.id, fixedNotes])
-  const withIssues = fixedNotes.filter(note => note.issueUrl)
-  const chosen = new Set(splitLinks(links))
+  const pages = useMemo(
+    () => pagesToCapture(editing ? notes.filter(note => note.resolvedRevisionId === revision?.id) : fixedNotes),
+    [editing, notes, revision?.id, fixedNotes],
+  )
 
-  useEffect(() => {
-    if (!github.ready || !github.repo) return
-    let alive = true
-    recentChanges(github.repo).then(list => { if (alive) setOptions(list) }).catch(() => { if (alive) setOptions([]) })
-    return () => { alive = false }
-  }, [github.ready, github.repo])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
-
-  const toggleLink = (url: string) => {
-    const next = splitLinks(links)
-    setLinks((chosen.has(url) ? next.filter(item => item !== url) : [...next, url]).join('\n'))
-  }
 
   const toggleFix = (id: string) => setFixes(current => {
     const next = new Set(current)
@@ -74,6 +52,9 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, githu
     else next.add(id)
     return next
   })
+
+  const selectAll = () => setFixes(new Set(pending.map(note => note.id)))
+  const clearFixes = () => setFixes(new Set())
 
   const capturePages = async (target: PreviewRevision): Promise<number> => {
     const shoot = window.kexoz?.capturePage
@@ -97,34 +78,27 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, githu
   const save = async () => {
     setBusy(true)
     try {
-      const linkList = splitLinks(links)
+      const existingLinks = (revision?.links ?? []).map(link => link.url)
       let target: PreviewRevision
       if (revision) {
         setProgress('Saving…')
-        target = normalizeRevision(await updateRevision(clientId, tunnel.id, revision.id, { label: label.trim(), summary: summary.trim(), links: linkList }))
+        target = normalizeRevision(await updateRevision(clientId, tunnel.id, revision.id, {
+          label: label.trim(),
+          summary: summary.trim(),
+          links: existingLinks,
+        }))
       } else {
-        setProgress('Creating the revision…')
-        target = normalizeRevision(await createRevision(clientId, tunnel.id, { label: label.trim(), summary: summary.trim(), fixes: [...fixes], links: linkList }))
+        setProgress('Publishing…')
+        target = normalizeRevision(await createRevision(clientId, tunnel.id, {
+          label: label.trim(),
+          summary: summary.trim(),
+          fixes: [...fixes],
+          links: [],
+        }))
       }
       const shots = capture ? await capturePages(target) : 0
-      let closed = 0
-      if (!editing && closeIssues) {
-        for (const note of withIssues) {
-          setProgress('Closing linked issues…')
-          try {
-            const url = note.issueUrl!
-            let done = false
-            if (github.ready && /github\.com/i.test(url)) done = await closeIssueAsFixed(url, target)
-            else if (linear?.ready && /linear\.app/i.test(url)) done = await completeLinearIssue(url, target)
-            if (done) closed++
-          } catch (err) {
-            toast.error(`Couldn’t close an issue: ${extractError(err)}`)
-          }
-        }
-      }
-      const parts = [editing ? `Saved v${target.number}` : `Published v${target.number}`]
+      const parts = [editing ? `Saved ${revisionName(target)}` : `Published ${revisionName(target)}`]
       if (shots) parts.push(`${shots} screenshot${shots === 1 ? '' : 's'}`)
-      if (closed) parts.push(`${closed} issue${closed === 1 ? '' : 's'} closed`)
       toast.success(parts.join(' · '))
       onSaved()
       onClose()
@@ -138,94 +112,121 @@ export default function RevisionModal({ clientId, tunnel, notes, revision, githu
 
   return (
     <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
-      <div className="ps-modal ps-rv-modal wide" role="dialog" aria-modal="true" aria-labelledby="rev-title">
+      <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="rev-title">
         <div className="ps-modal-header">
-          <h2 className="ps-modal-title" id="rev-title">{revision ? `Edit v${revision.number}` : 'New revision'}</h2>
+          <div>
+            <h2 className="ps-modal-title" id="rev-title">{revision ? `Edit ${revisionName(revision)}` : 'New version'}</h2>
+            {!editing && (
+              <p className="ps-modal-sub">
+                Tell reviewers you shipped changes on this preview. They can approve or ask for more.
+              </p>
+            )}
+          </div>
         </div>
+
         <div className="ps-modal-body ps-rv-form">
-          {!editing && <p className="ps-panel-hint">A revision tells reviewers you’ve shipped changes to this preview. They’ll see it in the toolbar and can approve it or ask for more changes.</p>}
+          <div className="ps-rv-form-block">
+            <label className="ps-label" htmlFor="rev-label">Title</label>
+            <input
+              id="rev-label"
+              className="ps-input"
+              maxLength={80}
+              placeholder="Checkout polish"
+              value={label}
+              onChange={event => setLabel(event.target.value)}
+              autoFocus
+            />
+          </div>
 
-          <label className="ps-label" htmlFor="rev-label">Label</label>
-          <input id="rev-label" className="ps-input" maxLength={80} placeholder="Checkout polish" value={label} onChange={event => setLabel(event.target.value)} autoFocus />
-
-          <label className="ps-label" htmlFor="rev-summary">What changed</label>
-          <textarea id="rev-summary" className="ps-input" rows={3} maxLength={2000} placeholder="Fixed the button spacing and the broken link in the footer." value={summary} onChange={event => setSummary(event.target.value)} />
+          <div className="ps-rv-form-block">
+            <label className="ps-label" htmlFor="rev-summary">What changed</label>
+            <textarea
+              id="rev-summary"
+              className="ps-input"
+              rows={3}
+              maxLength={2000}
+              placeholder="Fixed button spacing and the broken footer link."
+              value={summary}
+              onChange={event => setSummary(event.target.value)}
+            />
+          </div>
 
           {!editing && (
-            <>
-              <span className="ps-label">Fixes</span>
+            <div className="ps-rv-form-block">
+              <div className="ps-rv-form-block-head">
+                <span className="ps-label">Marks these notes fixed</span>
+                {pending.length > 0 && (
+                  <span className="ps-rv-form-tools">
+                    <button type="button" className="ps-rv-link" onClick={selectAll}>All</button>
+                    <button type="button" className="ps-rv-link" onClick={clearFixes}>None</button>
+                  </span>
+                )}
+              </div>
               {pending.length === 0 ? (
                 <p className="field-help">No open feedback on this share.</p>
               ) : (
                 <ul className="ps-rv-checklist">
-                  {pending.map(note => (
-                    <li key={note.id}>
-                      <label className="ps-check">
-                        <input type="checkbox" checked={fixes.has(note.id)} onChange={() => toggleFix(note.id)} />
-                        <span>
-                          <span className="ps-rv-check-body">{note.body}</span>
-                          <span className="ps-rv-muted">{note.author || 'Guest'} · {note.path}{note.status === 'in_progress' ? ' · in progress' : ''}</span>
-                        </span>
-                      </label>
-                    </li>
-                  ))}
+                  {pending.map(note => {
+                    const checked = fixes.has(note.id)
+                    const preview = note.body.trim().split(/\n/)[0].slice(0, 90)
+                    return (
+                      <li key={note.id} className={checked ? 'is-checked' : ''}>
+                        <label className="ps-check ps-rv-fix-row">
+                          <input type="checkbox" checked={checked} onChange={() => toggleFix(note.id)} />
+                          <span className="ps-rv-fix-copy">
+                            <span className="ps-rv-check-body">{preview || 'Untitled note'}</span>
+                            <span className="ps-rv-muted">
+                              {note.author || 'Guest'}
+                              {' · '}
+                              <code>{note.path || '/'}</code>
+                              {note.status === 'in_progress' ? ' · In progress' : ''}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
-            </>
-          )}
-
-          <label className="ps-label" htmlFor="rev-links">Pull requests and commits</label>
-          <textarea id="rev-links" className="ps-input" rows={2} spellCheck={false} placeholder="https://github.com/acme/site/pull/42" value={links} onChange={event => setLinks(event.target.value)} />
-          <p className="field-help">One link per line, https only. Reviewers don’t see these; they’re for you and your team.</p>
-          {options && options.length > 0 && (
-            <ul className="ps-rv-checklist compact" aria-label={`Recent changes in ${github.repo}`}>
-              {options.map(option => (
-                <li key={option.url}>
-                  <label className="ps-check">
-                    <input type="checkbox" checked={chosen.has(option.url)} onChange={() => toggleLink(option.url)} />
-                    <span>
-                      <span className="ps-rv-check-body">{option.label}</span>
-                      <span className="ps-rv-muted">{option.detail}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+            </div>
           )}
 
           {window.kexoz?.capturePage && (
-            <>
+            <div className="ps-rv-form-block">
               <label className="ps-check">
                 <input type="checkbox" checked={capture} onChange={event => setCapture(event.target.checked)} />
-                <span>Capture screenshots from your local app for before-and-after</span>
+                <span>Capture before/after screenshots from localhost</span>
               </label>
               {capture && (
                 <div className="ps-rv-capture">
                   <div className="ps-segmented" role="radiogroup" aria-label="Screenshot width">
                     {WIDTHS.map(option => (
-                      <button key={option.value} type="button" role="radio" aria-checked={width === option.value} className={`ps-segmented-item ${width === option.value ? 'active' : ''}`} onClick={() => setWidth(option.value)}>
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={width === option.value}
+                        className={`ps-segmented-item ${width === option.value ? 'active' : ''}`}
+                        onClick={() => setWidth(option.value)}
+                      >
                         {option.label}
                       </button>
                     ))}
                   </div>
-                  <p className="field-help">Pages: {pages.join(', ')}</p>
+                  <p className="field-help">
+                    {pages.length === 0 ? 'No pages to capture yet — pick notes above or leave a note on a path first.' : `Pages: ${pages.join(', ')}`}
+                  </p>
                 </div>
               )}
-            </>
-          )}
-
-          {!editing && withIssues.length > 0 && (github.ready || linear?.ready) && (
-            <label className="ps-check">
-              <input type="checkbox" checked={closeIssues} onChange={event => setCloseIssues(event.target.checked)} />
-              <span>Close {withIssues.length} linked issue{withIssues.length === 1 ? '' : 's'} with a note on this revision</span>
-            </label>
+            </div>
           )}
         </div>
+
         <div className="ps-modal-footer">
           {progress && <span className="ps-rv-progress" role="status">{progress}</span>}
           <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="button" className="ps-btn ps-btn-primary" onClick={() => void save()} disabled={busy}>
-            {busy ? 'Working…' : editing ? 'Save' : `Publish${fixes.size ? ` · fixes ${fixes.size}` : ''}`}
+            {busy ? 'Working…' : editing ? 'Save' : `Publish${fixes.size ? ` · ${fixes.size} fixed` : ''}`}
           </button>
         </div>
       </div>

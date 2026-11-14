@@ -335,7 +335,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
     <div className="ps-main ps-requests-main">
       <div className="ps-page-header animate-fade-down">
         <div>
-          <h1 className="ps-page-title">Requests</h1>
+          <h1 className="ps-page-title">HTTP Requests</h1>
           <p className="ps-page-subtitle">
             {hasRequests
               ? `${displayLog.length} of ${hostLog.length} shown`
@@ -381,7 +381,7 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
         {!hasRequests ? (
           <div className="ps-card ps-req-empty-card">
             <span className="ps-empty-title">{host === ALL_HOSTS ? 'No requests yet' : 'No requests on this link yet'}</span>
-            <span className="ps-empty-sub">Open your link in a browser and each request will show up here.</span>
+            <span className="ps-empty-sub">Open a web share in a browser and each request shows up here. Android Preview traffic is interaction-based, not an HTTP request log.</span>
             {emptyLink && (
               <div className="ps-req-empty-link">
                 <span className="ps-req-empty-url">https://{emptyLink}</span>
@@ -426,6 +426,14 @@ export default function RequestsPage({ requestLog, onClear, retention, onRetenti
                   <div className="ps-empty" style={{ flex: 1 }}>
                     <span className="ps-empty-title">Nothing matches</span>
                     <span className="ps-empty-sub">Try a different search or filter.</span>
+                    <button
+                      type="button"
+                      className="ps-btn ps-btn-secondary ps-btn-sm"
+                      style={{ marginTop: 8 }}
+                      onClick={() => { setSearch(''); setMethodFilter('all'); setStatusFilter('all') }}
+                    >
+                      Clear filters
+                    </button>
                   </div>
                 ) : (
                   [...displayLog].reverse().map((entry, i) => (

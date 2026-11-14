@@ -1,9 +1,13 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { QUICK_PORTS } from '../../lib/storage'
 import { ROOT_DOMAIN, type PathRoute, type Project, type ShareAccess, type TunnelType } from '../../lib/api'
 import { EXPIRY_OPTIONS, environmentLabel, projectNameError, routeError, type NewShareRequest } from '../../lib/shares'
 import { usePortScanner } from '../../hooks/usePortScanner'
 import RouteRulesEditor from '../dashboard/RouteRulesEditor'
+import TrustNote from '../ui/TrustNote'
+import Spinner from '../ui/Spinner'
+import { X } from 'lucide-react'
+import { useDialog } from '../../hooks/useDialog'
 
 const MIN_PASSWORD = 4
 const NEW_PROJECT = '__new'
@@ -30,7 +34,7 @@ type Props = {
   onSubmit: (request: NewShareRequest) => void | Promise<void>
 }
 
-type Protocol = 'web' | 'tcp' | 'udp'
+type Protocol = 'web' | 'tcp' | 'udp' | 'mobile'
 type ExpiryId = typeof EXPIRY_OPTIONS[number]['id'] | 'custom'
 type ExpiryUnit = 'm' | 'h' | 'd'
 
@@ -54,6 +58,9 @@ const PROTOCOLS: { id: Protocol; label: string }[] = [
   { id: 'udp', label: 'UDP' },
 ]
 
+/** Device tunneling for Android and iPhone — shown in UI, not creatable yet. */
+const MOBILE_PREVIEW_SOON = true
+
 function Segmented<T extends string>({ label, options, value, onChange }: {
   label: string
   options: { id: T; label: string }[]
@@ -69,6 +76,17 @@ function Segmented<T extends string>({ label, options, value, onChange }: {
           role="radio"
           aria-checked={value === option.id}
           className={`ps-segmented-item ${value === option.id ? 'active' : ''}`}
+          tabIndex={value === option.id ? 0 : -1}
+          onKeyDown={event => {
+            const current = options.findIndex(item => item.id === value)
+            const next = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (current + 1) % options.length
+              : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (current - 1 + options.length) % options.length
+              : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : -1
+            if (next < 0) return
+            event.preventDefault()
+            onChange(options[next].id)
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus()
+          }}
           onClick={() => onChange(option.id)}
         >
           {option.label}
@@ -117,7 +135,7 @@ function Field({ label, htmlFor, aside, help, error, children }: {
         {aside}
       </div>
       {children}
-      {error ? <p className="ps-ns-error" role="alert">{error}</p> : help ? <p className="field-help">{help}</p> : null}
+      {error ? <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="ps-ns-error" role="alert">{error}</p> : help ? <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="field-help">{help}</p> : null}
     </div>
   )
 }
@@ -144,18 +162,23 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   const [moreOpen, setMoreOpen] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const modalRef = useRef<HTMLDivElement>(null)
+  const modalRef = useDialog(() => { if (!submitting) onClose() })
+  const [submitError, setSubmitError] = useState('')
   const detectedPorts = usePortScanner(true)
 
   const tunnelType: TunnelType =
     protocol === 'udp' ? 'udp' :
     protocol === 'tcp' ? (endToEnd ? 'e2e' : 'tcp') :
+    protocol === 'mobile' ? 'mobile' :
     'http'
 
   const isWeb = tunnelType === 'http'
+  const isMobile = tunnelType === 'mobile'
+  const isGatedShare = isWeb || isMobile
   const needsAddress = tunnelType !== 'tcp' && tunnelType !== 'udp'
-  const effectiveAccess: ShareAccess = isWeb ? access : 'public'
-  const needsPassword = isWeb && effectiveAccess === 'private'
+  const effectiveAccess: ShareAccess = isGatedShare ? access : 'public'
+  const needsPassword = isGatedShare && effectiveAccess === 'private'
+
   const creatingProject = project === NEW_PROJECT
   const projectEnvironments = creatingProject ? [] : environments[project] ?? []
   const chosenEnvironment = projectEnvironments.includes(envChoice) ? envChoice : ''
@@ -167,11 +190,15 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
     : projectNameError(projectName)
       || (projects.some(item => item.name.toLowerCase() === trimmedProjectName.toLowerCase()) ? 'You already have a project with that name.' : '')
   const addressError = !needsAddress || address ? '' : 'Choose an address for the link.'
-  const portError = port.trim() === ''
-    ? 'Enter the port your app is running on.'
-    : !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535
-      ? 'Use a port between 1 and 65535.'
-      : ''
+  const deviceError = isMobile && MOBILE_PREVIEW_SOON
+    ? 'Android and iPhone preview are coming soon. Share a website or API for now.'
+    : ''
+  const portError = isMobile ? ''
+    : port.trim() === ''
+      ? 'Enter the port your app is running on.'
+      : !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535
+        ? 'Use a port between 1 and 65535.'
+        : ''
   const routesError = usedRoutes.some((route, index) => routeError(route, usedRoutes.filter((_, other) => other !== index)))
     ? 'Fix the paths above, or remove the ones you don’t need.'
     : ''
@@ -190,7 +217,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
   const duration = expiry === 'custom'
     ? `${customMinutes}m`
     : EXPIRY_OPTIONS.find(option => option.id === expiry)?.duration || undefined
-  const visibleError = projectError || portError || routesError || addressError || passwordError
+  const visibleError = projectError || portError || deviceError || routesError || addressError || passwordError
   const firstError = visibleError || expiryError
   const sharedWith = addresses.find(option => option.name === address)?.usedBy ?? []
   const detectedLabel = detectedPorts.find(detected => detected.port === portNumber)?.label
@@ -199,28 +226,6 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
       .map(value => [value, detectedPorts.some(detected => detected.port === value)]),
   ) as Record<number, boolean>
   const show = (error: string) => (attempted ? error : '')
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      onClose()
-      return
-    }
-    if (event.key !== 'Tab' || !modalRef.current) return
-    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]):not([readonly]), select, textarea, [href], [tabindex]:not([tabindex="-1"])'
-    )
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
 
   const toggleRouting = (next: boolean) => {
     setRouting(next)
@@ -232,17 +237,19 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
     if (firstError) {
       if (expiryError && !visibleError) setMoreOpen(true)
       requestAnimationFrame(() => {
-        modalRef.current?.querySelector('.ps-ns-error')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        modalRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+        modalRef.current?.querySelector('.ps-ns-error')?.scrollIntoView({ block: 'nearest' })
       })
       return
     }
     if (submitting) return
     setSubmitting(true)
+    setSubmitError('')
     try {
       await onSubmit({
         subdomain: needsAddress ? address : '',
         tunnelType,
-        port: portNumber,
+        port: isMobile ? 0 : portNumber,
         access: effectiveAccess,
         permissions: 'read-write',
         password: needsPassword ? password : undefined,
@@ -254,6 +261,8 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
         newProjectName: creatingProject ? trimmedProjectName : undefined,
         environment: chosenEnvironment || undefined,
       })
+    } catch {
+      setSubmitError('Couldn’t start sharing. Check your connection and try again.')
     } finally {
       setSubmitting(false)
     }
@@ -309,6 +318,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
             placeholder="Like my-app"
             aria-label="New project name"
             aria-invalid={attempted && Boolean(projectError)}
+            aria-describedby={attempted && projectError ? 'new-share-project-hint' : undefined}
             autoFocus={projects.length > 0}
           />
         )}
@@ -337,6 +347,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
           autoFocus={!creatingProject || projects.length === 0}
           onKeyDown={onEnter}
           aria-invalid={attempted && Boolean(portError)}
+          aria-describedby={attempted && portError ? 'new-share-port-hint' : undefined}
         />
       </div>
       <div className="ps-ns-ports">
@@ -394,7 +405,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
     </div>
   )
 
-  const accessFields = isWeb && (
+  const accessFields = isGatedShare && (
     <div className="ps-ns-field">
       <Segmented
         label="Who can open it"
@@ -509,10 +520,43 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
 
   const projectLabel = creatingProject ? trimmedProjectName : projects.find(item => item.id === project)?.name
   const previewLink = needsAddress ? (address ? `${address}.${ROOT_DOMAIN}` : 'Pick an address') : `A public ${protocol === 'udp' ? 'UDP' : 'TCP'} port`
-  const previewTarget = Number.isInteger(portNumber) && portNumber > 0 ? `localhost:${portNumber}` : 'localhost:port'
+  const previewTarget = isMobile
+    ? 'Mobile preview'
+    : Number.isInteger(portNumber) && portNumber > 0 ? `localhost:${portNumber}` : 'localhost:port'
+
+  const deviceField = isMobile && (
+    <div className="ps-ns-field">
+      <div className="ps-segmented" role="radiogroup" aria-label="Mobile platform">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={false}
+          className="ps-segmented-item"
+          disabled
+          title="Android Mobile Preview is not available yet"
+        >
+          Android · Coming soon
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={false}
+          className="ps-segmented-item"
+          disabled
+          title="iOS Mobile Preview is not available yet"
+        >
+          iOS · Coming soon
+        </button>
+      </div>
+      <p className="field-help ps-ns-note">
+        Android emulator/device preview and iPhone / Simulator preview are both coming soon. Share a website or API today.
+      </p>
+      {show(deviceError) && <p className="ps-ns-error" role="alert">{deviceError}</p>}
+    </div>
+  )
 
   return (
-    <div className="ps-modal-overlay" onClick={onClose}>
+    <div className="ps-modal-overlay" onClick={() => { if (!submitting) onClose() }}>
       <div
         className="ps-modal ps-ns"
         role="dialog"
@@ -520,27 +564,36 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
         aria-labelledby="new-share-title"
         ref={modalRef}
         onClick={e => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
+        tabIndex={-1}
+        aria-busy={submitting}
       >
         <div className="ps-ns-header">
           <div>
-            <h2 className="ps-modal-title" id="new-share-title">New preview</h2>
+            <h2 className="ps-modal-title" id="new-share-title">New share</h2>
             <p className="ps-ns-context">
               {projectLabel ? <>Adds to <strong>{projectLabel}</strong></> : 'Put something on this computer online with a link.'}
             </p>
           </div>
+          <button type="button" className="ps-ns-close" aria-label="Close new share" onClick={onClose} disabled={submitting}><X size={16} /></button>
         </div>
 
-        <div className="ps-ns-body">
-          <Section title="Your app">
+        <fieldset className="ps-ns-body" disabled={submitting}>
+          {submitError && <p className="ps-ns-error" role="alert">{submitError}</p>}
+          <Section title={isMobile ? 'Device' : protocol === 'web' ? 'Local app' : 'Service'}>
             <Segmented
-              label="Kind of traffic"
+              label="What to share"
               options={PROTOCOLS}
               value={protocol}
-              onChange={next => { setProtocol(next); setEndToEnd(false) }}
+              onChange={next => {
+                setProtocol(next)
+                setEndToEnd(false)
+              }}
             />
-            {portField}
-            {protocol !== 'web' && (
+            {isMobile ? deviceField : portField}
+            {protocol === 'web' && (
+              <p className="field-help ps-ns-note">Expose a local HTTP app on a Kexoz address. Turn on visual review when you want pins on the page.</p>
+            )}
+            {(protocol === 'tcp' || protocol === 'udp') && (
               <p className="field-help ps-ns-note">You get a public address and port. Anyone who has it can connect, so keep your service’s own login on.</p>
             )}
             {protocol === 'tcp' && (
@@ -564,17 +617,24 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
             </div>
           </Section>
 
-          {isWeb && (
+          {isGatedShare && (
             <Section title="Who can open it">
               {accessFields}
-              <div className="ps-ns-toggles">
-                <ToggleRow
-                  title="Visual review"
-                  desc="Visitors pin notes anywhere on the page. You resolve them here or on the page."
-                  checked={preview}
-                  onChange={setPreview}
-                />
-              </div>
+              {isWeb && (
+                <div className="ps-ns-toggles">
+                  <ToggleRow
+                    title="Visual review"
+                    desc="Visitors pin notes anywhere on the page. You resolve them here or on the page."
+                    checked={preview}
+                    onChange={setPreview}
+                  />
+                </div>
+              )}
+              {isWeb && effectiveAccess === 'public' && (
+                <TrustNote title="Public link" tone="warn">
+                  Anyone with the URL can open this share. Use a password if the build has private data.
+                </TrustNote>
+              )}
             </Section>
           )}
 
@@ -593,7 +653,7 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
               </div>
             )}
           </div>
-        </div>
+        </fieldset>
 
         <div className="ps-ns-footer">
           <div className="ps-ns-summary" aria-live="polite">
@@ -601,14 +661,15 @@ export default function NewShareModal({ onClose, onSubmit, addresses, projects, 
             <span className="ps-ns-summary-arrow" aria-hidden="true">→</span>
             <span className="ps-ns-summary-target">{previewTarget}</span>
           </div>
-          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="ps-btn ps-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
           <button
             type="button"
-            className="ps-btn ps-btn-primary"
+            className={`ps-btn ps-btn-primary ${submitting ? 'is-loading' : ''}`}
             onClick={() => void handleSubmit()}
-            disabled={submitting || (needsAddress && addresses.length === 0)}
+            disabled={submitting || isMobile || (needsAddress && addresses.length === 0)}
+            title={isMobile ? 'Mobile preview is coming soon' : undefined}
           >
-            {submitting ? 'Starting…' : creatingProject ? 'Create project and start' : 'Start sharing'}
+            {submitting ? <><Spinner size={14} /> Starting</> : isMobile ? 'Coming soon' : creatingProject ? 'Create project and start' : 'Start sharing'}
           </button>
         </div>
       </div>

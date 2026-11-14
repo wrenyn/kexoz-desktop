@@ -1,12 +1,56 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Hello World!</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kexoz</title>
+    <style>
+      @font-face { font-family: 'Space Grotesk'; src: url('../assets/fonts/space-grotesk-latin-variable.woff2') format('woff2'); font-weight: 300 700; font-style: normal; font-display: swap; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #101310;
+        color: #EDF2E9;
+        font-family: 'Space Grotesk', system-ui, sans-serif;
+      }
+      .boot {
+        min-height: 100%;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 14px;
+        text-align: center;
+      }
+      .mark { width: 64px; height: 64px; }
+      .edge { stroke: #B6F36B; stroke-width: 10; stroke-dasharray: .22 .78; animation: brand-trace 1.8s linear infinite; }
+      .signal { animation: brand-signal 1.8s ease-in-out infinite; }
+      @keyframes brand-trace { to { stroke-dashoffset: -1; } }
+      @keyframes brand-signal { 50% { opacity: .4; } }
+      @media (prefers-reduced-motion: reduce) { .mark * { animation: none !important; } }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.03em;
+      }
+      p {
+        margin: 0;
+        max-width: 32ch;
+        color: #9AA89A;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+    </style>
   </head>
   <body>
-    <h1>💖 Hello World!</h1>
-    <p>Welcome to your Electron application.</p>
+    <div class="boot">
+      <svg class="mark" aria-hidden="true" viewBox="0 0 512 512" fill="none">
+        <rect x="8" y="8" width="496" height="496" rx="124" fill="#0E120F" />
+        <rect class="edge" x="8" y="8" width="496" height="496" rx="124" pathLength="1" />
+        <path d="M140 116h76v118l116-118h96L278 266l156 130H328L216 300v96h-76V116Z" fill="#F4F7F2" />
+        <path class="signal" d="m216 226 46 40-46 40v-80Z" fill="#B6F36B" />
+      </svg>
+      <h1>Kexoz</h1>
+      <p>Starting… If this stays here, reopen the app from the Start menu.</p>
+    </div>
   </body>
 </html>

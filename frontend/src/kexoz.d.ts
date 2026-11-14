@@ -55,6 +55,7 @@ declare global {
       stopTunnel?: (key: string) => Promise<boolean>
       setTunnelPort?: (key: string, port: number) => Promise<boolean>
       updateTray?: (tunnels: import('./lib/api').PersistentTunnel[]) => Promise<boolean>
+      onTrayAction?: (callback: (action: string) => void) => () => void
       setAutoStart?: (enabled: boolean) => Promise<boolean>
       listListeningPorts?: () => Promise<ListeningPort[]>
       diagnose?: (config: { apiBase: string; ports: number[] }) => Promise<DiagnosisResult>
@@ -69,6 +70,41 @@ declare global {
       linearRequest?: <T = unknown>(payload: { query: string; variables?: Record<string, unknown> }) => Promise<T>
       onTunnelState?: (callback: (key: string, state: import('./lib/api').ConnectionState, reason?: string) => void) => () => void
       onLogEntry: (callback: (key: string, entry: import('./lib/api').RequestLogEntry) => void) => () => void
+      adbListDevices?: () => Promise<{
+        devices: Array<{
+          id: string
+          serial: string
+          state: string
+          model?: string
+          androidVersion?: string
+          width?: number
+          height?: number
+          emulator?: boolean
+          capabilities?: { remoteInput?: boolean; viewOnly?: boolean }
+        }>
+        adbPath?: string
+        adbVersion?: string
+        error?: string
+      }>
+      adbDiagnose?: () => Promise<{ rows: Array<{ id: string; ok: boolean; detail: string }>; adbPath?: string }>
+      mobilePreviewStart?: (payload: { serial: string; frameIntervalMs?: number }) => Promise<{
+        ok: boolean
+        sessionId?: string
+        port?: number
+        info?: { model?: string; androidVersion?: string; width?: number; height?: number }
+        message?: string
+      }>
+      mobilePreviewStop?: (sessionId: string) => Promise<{ ok: boolean }>
+      mobilePreviewRevoke?: (sessionId: string) => Promise<{ ok: boolean; message?: string }>
+      mobileSessions?: () => Promise<Array<{
+        id: string
+        serial: string
+        port: number
+        remoteControlActive: boolean
+        viewerCount?: number
+        info?: { model?: string; androidVersion?: string; width?: number; height?: number }
+      }>>
+      onMobileState?: (callback: (sessionId: string, kind: string, data: unknown) => void) => () => void
     }
   }
 }

@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { ClientSession, PersistentTunnel } from '../../lib/api'
 import { ROOT_DOMAIN, checkCustomDomain, tierOf, upgradeUrl } from '../../lib/api'
 import { normalizeSubdomain } from '../../lib/utils'
+import Spinner from '../ui/Spinner'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import TrustNote from '../ui/TrustNote'
+import LoadingBlock from '../ui/LoadingBlock'
 
 type Props = {
   session: ClientSession | null
@@ -59,7 +63,7 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
 
   const badge =
     status === 'ready' ? <span className="ps-badge ps-badge-green">Connected</span> :
-    status === 'unknown' ? <span className="ps-badge ps-badge-gray">Checking…</span> :
+    status === 'unknown' ? <span className="ps-badge ps-badge-gray"><span className="ps-inline-load"><Spinner size={11} /> Checking</span></span> :
     <span className="ps-badge ps-badge-yellow">Waiting for DNS</span>
 
   return (
@@ -72,8 +76,8 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
         {badge}
         <div className="ps-domain-actions">
           {status === 'waiting' && (
-            <button className="ps-btn ps-btn-ghost ps-btn-sm" disabled={checking} onClick={() => { setChecking(true); void check() }}>
-              {checking ? 'Checking…' : 'Check again'}
+            <button className={`ps-btn ps-btn-ghost ps-btn-sm ${checking ? 'is-loading' : ''}`} disabled={checking} onClick={() => { setChecking(true); void check() }}>
+              {checking ? <><Spinner size={12} /> Checking</> : 'Check again'}
             </button>
           )}
           <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => copy('link', `https://${domain}`)}>
@@ -81,12 +85,19 @@ function CustomDomainCard({ clientId, domain, dnsTarget }: { clientId: string; d
           </button>
         </div>
       </div>
-      {!ready && (
+      {status === 'unknown' ? (
+        <div className="ps-domains-section" style={{ borderTop: '1px solid var(--border)' }}>
+          <LoadingBlock label="Checking DNS" compact rows={2} />
+        </div>
+      ) : !ready && (
         <div className="ps-domains-section" style={{ borderTop: '1px solid var(--border)' }}>
           <div className="ps-domains-section-title">DNS record</div>
           <p className="ps-domains-section-text">
             Add this record at your DNS provider. It usually starts working within a few minutes, and this page updates on its own.
           </p>
+          <TrustNote title="Why this step exists" tone="ok">
+            We only mark the domain connected after public DNS points here — so visitors never hit a half-configured address.
+          </TrustNote>
           {target ? (
             <div className="ps-dns-record">
               <span className="ps-dns-head">Type</span>
@@ -162,7 +173,7 @@ export default function DomainsPage({
       <div className="ps-page-header animate-fade-down">
         <div>
           <h1 className="ps-page-title">Domains</h1>
-          <p className="ps-page-subtitle">Addresses your previews publish on</p>
+          <p className="ps-page-subtitle">Kexoz subdomains and custom domains — DNS verification and SSL status</p>
         </div>
         {isPro && (
           <div className="ps-header-actions">
@@ -188,8 +199,8 @@ export default function DomainsPage({
                 />
                 <span className="ps-input-suffix">.{ROOT_DOMAIN}</span>
               </div>
-              <button type="submit" className="ps-btn ps-btn-primary" disabled={adding || !newAddress.trim()}>
-                {adding ? 'Adding…' : 'Add address'}
+              <button type="submit" className={`ps-btn ps-btn-primary ${adding ? 'is-loading' : ''}`} disabled={adding || !newAddress.trim()}>
+                {adding ? <><Spinner size={13} /> Adding</> : 'Add address'}
               </button>
             </div>
             {addError
@@ -198,10 +209,9 @@ export default function DomainsPage({
           </form>
 
           {addresses.length === 0 ? (
-            <div className="ps-empty">
-              <span className="ps-empty-title">No addresses yet</span>
-              <span className="ps-empty-sub">Add one above, then use it when you create a share.</span>
-            </div>
+            <PremiumEmpty title="No addresses yet">
+              Add one above, then pick it when you create a share. Example: my-app.{ROOT_DOMAIN}
+            </PremiumEmpty>
           ) : (
             addresses.map(name => {
               const host = `${name}.${ROOT_DOMAIN}`

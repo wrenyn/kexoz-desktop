@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ROOT_DOMAIN, checkSubdomainAvailability } from '../../lib/api'
 import Logo from '../ui/Logo'
+import Spinner from '../ui/Spinner'
+import TrustNote from '../ui/TrustNote'
 
 type SubdomainScreenProps = {
   subdomainInput: string
@@ -13,44 +15,51 @@ export default function SubdomainScreen({
   subdomainInput, setSubdomainInput, onSubmit, isBusy
 }: SubdomainScreenProps) {
   const [isChecking, setIsChecking] = useState(false)
-  const [availability, setAvailability] = useState<'idle' | 'available' | 'taken' | 'reserved'>('idle')
+  const [checkVersion, setCheckVersion] = useState(0)
+  const [availability, setAvailability] = useState<'idle' | 'available' | 'taken' | 'reserved' | 'error'>('idle')
 
   // Debounced real-time availability check
   useEffect(() => {
     const value = subdomainInput.trim().toLowerCase()
-    if (value.length < 3 || value.length > 32 || !/^[a-z0-9]/.test(value)) {
+    if (value.length < 3 || value.length > 32 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value)) {
       setAvailability('idle')
       setIsChecking(false)
       return
     }
+    let active = true
+    setAvailability('idle')
     setIsChecking(true)
     const timer = setTimeout(async () => {
       try {
         const res = await checkSubdomainAvailability(value)
-        setAvailability(res.reserved ? 'reserved' : res.available ? 'available' : 'taken')
+        if (active) setAvailability(res.reserved ? 'reserved' : res.available ? 'available' : 'taken')
       } catch {
-        setAvailability('idle')
+        if (active) setAvailability('error')
       } finally {
-        setIsChecking(false)
+        if (active) setIsChecking(false)
       }
     }, 380)
-    return () => clearTimeout(timer)
-  }, [subdomainInput])
+    return () => { active = false; clearTimeout(timer) }
+  }, [subdomainInput, checkVersion])
 
   const AvailabilityBadge = () => {
-    const status =
-      isChecking ? { text: 'Checking…', color: 'var(--text-soft)' } :
-      availability === 'available' ? { text: 'Available', color: 'var(--green)' } :
-      availability === 'taken' ? { text: 'Taken', color: 'var(--red)' } :
-      availability === 'reserved' ? { text: 'Not available', color: 'var(--red)' } :
-      null
-    if (!status) return null
-    return <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 600, color: status.color }}>{status.text}</span>
+    if (isChecking) {
+      return (
+        <span className="ps-avail-pill is-wait">
+          <Spinner size={11} /> Checking
+        </span>
+      )
+    }
+    if (availability === 'available') return <span className="ps-avail-pill is-ok">Available</span>
+    if (availability === 'taken') return <span className="ps-avail-pill is-bad">Taken</span>
+    if (availability === 'reserved') return <span className="ps-avail-pill is-bad">Not available</span>
+    if (availability === 'error') return <span className="ps-avail-pill is-bad">Couldn’t check — try again</span>
+    return null
   }
 
   const inputBorderColor =
     availability === 'available' ? 'var(--green)' :
-    (availability === 'taken' || availability === 'reserved') ? 'var(--red)' :
+    (availability === 'taken' || availability === 'reserved' || availability === 'error') ? 'var(--red)' :
     undefined
 
   const canSubmit = !isBusy && !isChecking && availability === 'available'
@@ -82,13 +91,13 @@ export default function SubdomainScreen({
             <div className="ps-input-wrap">
               <label className="ps-label" htmlFor="subdomain" style={{ display: 'flex', alignItems: 'center' }}>
                 Address
-                <AvailabilityBadge />
+                <span role="status"><AvailabilityBadge /></span>
               </label>
               <div
                 className="ps-input-group"
                 style={{
                   borderColor: inputBorderColor,
-                  boxShadow: inputBorderColor ? `0 0 0 2px ${inputBorderColor}22` : undefined,
+                  boxShadow: inputBorderColor ? `0 0 0 2px color-mix(in srgb, ${inputBorderColor} 15%, transparent)` : undefined,
                   transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                 }}
               >
@@ -100,6 +109,9 @@ export default function SubdomainScreen({
                   placeholder="my-app"
                   autoComplete="off"
                   spellCheck={false}
+                  maxLength={32}
+                  aria-describedby="subdomain-help"
+                  aria-invalid={availability === 'taken' || availability === 'reserved'}
                   disabled={isBusy}
                   autoFocus
                 />
@@ -112,15 +124,21 @@ export default function SubdomainScreen({
               )}
             </div>
 
+            <p id="subdomain-help" className="field-help">Use 3–32 lowercase letters, numbers, or hyphens. Start and end with a letter or number.</p>
+            {availability === 'error' && <button type="button" className="ps-btn ps-btn-secondary" onClick={() => setCheckVersion(value => value + 1)}>Check availability again</button>}
             <button
-              className="ps-btn ps-btn-primary ps-btn-lg"
+              className={`ps-btn ps-btn-primary ps-btn-lg ${isBusy ? 'is-loading' : ''}`}
               type="submit"
               disabled={!canSubmit}
               style={{ borderRadius: 10, transition: 'all 0.2s ease' }}
             >
-              {isBusy ? 'Saving…' : 'Continue'}
+              {isBusy ? <><Spinner size={14} /> Saving</> : 'Continue'}
             </button>
           </form>
+
+          <TrustNote title="Your public address" tone="ok">
+            Reviewers open this link in a browser. You can add more addresses later from Domains.
+          </TrustNote>
         </div>
       </div>
     </div>

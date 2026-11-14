@@ -10,6 +10,8 @@ import { environmentLabel, portForPath, shareLabel } from '../../lib/shares'
 import { extractError, formatBytes, fromBase64 } from '../../lib/utils'
 import { useConfirm } from '../../hooks/useConfirm'
 import { useCopy } from '../../hooks/useCopy'
+import LoadingBlock from '../ui/LoadingBlock'
+import Spinner from '../ui/Spinner'
 
 type Props = {
   clientId: string
@@ -53,6 +55,8 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
   const [showSecrets, setShowSecrets] = useState(false)
   const [busy, setBusy] = useState(false)
   const [replaying, setReplaying] = useState(false)
+  const [search, setSearch] = useState('')
+  const [methodFilter, setMethodFilter] = useState('all')
   const { confirm, dialog } = useConfirm()
   const { copied, copy } = useCopy()
 
@@ -96,7 +100,15 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
 
   const inbox = view?.inbox ?? null
   const target = webShares.find(tunnel => tunnel.id === inbox?.targetTunnelId)
-  const requests = view?.requests ?? []
+  const requests = useMemo(() => view?.requests ?? [], [view?.requests])
+  const filteredRequests = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return requests.filter(request => {
+      if (methodFilter !== 'all' && request.method.toUpperCase() !== methodFilter) return false
+      if (!q) return true
+      return `${request.method} ${request.path} ${request.responseStatus ?? ''} ${request.delivery}`.toLowerCase().includes(q)
+    })
+  }, [requests, search, methodFilter])
   const summary = requests.find(item => item.id === selectedRequest)
   const shown = detail && detail.id === selectedRequest ? { ...summary, ...detail } as InboxRequest : summary
 
@@ -214,7 +226,7 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
   const header = (
     <div className="ps-page-header animate-fade-down">
       <div>
-        <h1 className="ps-page-title">Inbox</h1>
+        <h1 className="ps-page-title">Webhook Inbox</h1>
         <p className="ps-page-subtitle">Permanent URL for webhooks and OAuth — requests are kept even while the app is offline</p>
       </div>
       {projects.length > 1 && project && (
@@ -250,15 +262,21 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
         <div className="ps-page-content animate-fade-up">
           <div className="ps-card">
             <div className="ps-empty ps-empty-setup">
-              <span className="ps-empty-title">{loadedFor === project.id ? `Give ${project.name} an inbox` : 'Loading…'}</span>
+              {loadedFor === project.id ? (
+                <span className="ps-empty-title">Give {project.name} an inbox</span>
+              ) : (
+                <div style={{ width: '100%', maxWidth: 360 }}>
+                  <LoadingBlock label="Loading inbox" compact rows={2} />
+                </div>
+              )}
               {loadedFor === project.id && (
                 <>
                   <span className="ps-empty-sub">
                     Point Stripe, GitHub or an OAuth app at one URL that never changes. While your app runs, requests go straight to it.
                     When it’s off, Kexoz stores them so you can replay them later. Keeps the last {view?.limit || 50}.
                   </span>
-                  <button type="button" className="ps-btn ps-btn-primary" onClick={() => void create()} disabled={busy} style={{ marginTop: 8 }}>
-                    Create inbox
+                  <button type="button" className={`ps-btn ps-btn-primary ${busy ? 'is-loading' : ''}`} onClick={() => void create()} disabled={busy} aria-busy={busy || undefined} style={{ marginTop: 8 }}>
+                    {busy ? <><Spinner size={14} /> Creating</> : 'Create inbox'}
                   </button>
                 </>
               )}
@@ -326,7 +344,16 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
         ) : (
           <>
             <div className="ps-req-filters">
-              <span className="ps-panel-hint">{requests.length === 100 ? 'Latest 100 requests' : `${requests.length} ${requests.length === 1 ? 'request' : 'requests'}`}</span>
+              <span className="ps-panel-hint">{filteredRequests.length} of {requests.length} {requests.length === 1 ? 'request' : 'requests'}</span>
+              <input className="ps-input" style={{ minWidth: 140, maxWidth: 200 }} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search path" aria-label="Search webhook requests" />
+              <select className="ps-select" value={methodFilter} onChange={event => setMethodFilter(event.target.value)} aria-label="Method">
+                <option value="all">All methods</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
               <label className="ps-req-check">
                 <input type="checkbox" checked={showSecrets} onChange={event => setShowSecrets(event.target.checked)} />
                 Show secrets
@@ -335,7 +362,7 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
             </div>
             <div className="ps-card ps-inspector">
               <div className="ps-req-list" style={{ width: 380 }}>
-                {requests.map(request => (
+                {filteredRequests.map(request => (
                   <div
                     key={request.id}
                     className={`ps-req-item ${selectedRequest === request.id ? 'selected' : ''}`}
@@ -395,7 +422,10 @@ export default function InboxPage({ clientId, projects, tunnels, selectedId, onS
                           {shown.bodySize === 0 ? (
                             <div className="ps-code" style={{ color: 'var(--text-soft)' }}>Empty</div>
                           ) : !shown.bodyBase64 ? (
-                            <div className="ps-code" style={{ color: 'var(--text-soft)' }}>Loading…</div>
+                            <div className="ps-code" style={{ color: 'var(--text-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Spinner size={14} />
+                              Loading body
+                            </div>
                           ) : body.binary ? (
                             <div className="ps-code" style={{ color: 'var(--text-soft)' }}>Binary body, {formatBytes(shown.bodySize)}</div>
                           ) : (

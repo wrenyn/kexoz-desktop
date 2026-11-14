@@ -1,12 +1,14 @@
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
-import type { ClientSession, PersistentTunnel, RequestLogEntry, UsagePoint } from '../../lib/api'
+import type { ClientSession, PersistentTunnel, PreviewNote, RequestLogEntry, UsagePoint } from '../../lib/api'
 import { TIER_LABELS, tierOf, upgradeUrl } from '../../lib/api'
-import { shareStatus } from '../../lib/shares'
+import { shareLabel, shareStatus } from '../../lib/shares'
 import { isNoiseRequestPath } from '../../lib/tunnel'
 import { formatBytes } from '../../lib/utils'
 import type { ConnectionEvent } from '../../hooks/useConnectionHistory'
 import ConnectionPanel from '../dashboard/ConnectionPanel'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import WelcomePanel from '../dashboard/WelcomePanel'
 
 type Props = {
   session: ClientSession
@@ -17,9 +19,11 @@ type Props = {
   bytesOut: number
   dailyUsage: UsagePoint[]
   connectionEvents: ConnectionEvent[]
+  feedbackNotes: PreviewNote[]
   onNewShare: () => void
   onViewRequests: () => void
   onViewShares: () => void
+  onViewFeedback: () => void
 }
 
 const STATUS_GROUPS = [
@@ -34,9 +38,20 @@ function shortDate(period: string): string {
   return Number.isNaN(date.getTime()) ? period : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function timeAgo(when: string | number): string {
+  const ms = Date.now() - (typeof when === 'number' ? when : new Date(when).getTime())
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const m = Math.floor(ms / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 export default function DashboardPage({
   session, tunnels, totalRequests, requestLog, bytesIn, bytesOut, dailyUsage, connectionEvents,
-  onNewShare, onViewRequests, onViewShares,
+  feedbackNotes, onNewShare, onViewRequests, onViewShares, onViewFeedback,
 }: Props) {
   const tier = tierOf(session)
   const bwPct = session.bandwidthLimit > 0 ? Math.min(100, (session.bandwidthUsed / session.bandwidthLimit) * 100) : 0
@@ -52,6 +67,10 @@ export default function DashboardPage({
       count: visible.filter(entry => String(entry.status ?? '').startsWith(group.key)).length,
     }))
     const failed = visible.filter(entry => !entry.status).length
+    const httpErrors = visible.filter(entry => {
+      const s = Number(entry.status)
+      return s >= 500 || (!entry.status && entry.durationMs != null)
+    }).length
 
     const pathCounts = new Map<string, number>()
     for (const entry of visible) {
@@ -60,35 +79,69 @@ export default function DashboardPage({
     }
     const topPaths = [...pathCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
 
-    return { total: visible.length, avgMs, groups, failed, topPaths }
+    return { total: visible.length, avgMs, groups, failed, httpErrors, topPaths }
   }, [requestLog])
+
+  const feedback = useMemo(() => {
+    const open = feedbackNotes.filter(n => n.status === 'open').length
+    const progress = feedbackNotes.filter(n => n.status === 'in_progress').length
+    const fixed = feedbackNotes.filter(n => n.status === 'resolved').length
+    const recent = [...feedbackNotes]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 6)
+    return { open, progress, fixed, recent, total: feedbackNotes.length }
+  }, [feedbackNotes])
+
+  const activity = useMemo(() => {
+    const items: { id: string; label: string; when: string; onClick?: () => void }[] = []
+    for (const note of feedback.recent) {
+      items.push({
+        id: `fb-${note.id}`,
+        label: `Feedback · ${(note.body || 'Note').slice(0, 72)}`,
+        when: timeAgo(note.createdAt),
+        onClick: onViewFeedback,
+      })
+    }
+    for (const event of [...connectionEvents].reverse().slice(0, 4)) {
+      const share = tunnels.find(t => t.id === event.key)
+      const name = share ? shareLabel(share) : event.key.slice(0, 8)
+      items.push({
+        id: `conn-${event.at}-${event.key}-${event.state}`,
+        label: event.state === 'connected'
+          ? `Share connected · ${name}`
+          : event.state === 'idle'
+            ? `Share stopped · ${name}`
+            : `Share ${event.state} · ${name}`,
+        when: timeAgo(event.at),
+        onClick: onViewShares,
+      })
+    }
+    return items.slice(0, 8)
+  }, [feedback.recent, connectionEvents, onViewFeedback, onViewShares, tunnels])
 
   const chartData = dailyUsage.length > 0
     ? [...dailyUsage].reverse().map(p => ({ day: shortDate(p.period), bytes: p.totalBytes }))
     : []
 
+  const activeShareRows = tunnels
+    .filter(t => shareStatus(t) === 'active')
+    .slice(0, 6)
+
+  if (tunnels.length === 0) return <WelcomePanel onNewShare={onNewShare} />
+
   return (
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
-          <h1 className="ps-page-title">Dashboard</h1>
-          <p className="ps-page-subtitle">Live traffic and bandwidth across your previews</p>
+          <h1 className="ps-page-title">Overview</h1>
+          <p className="ps-page-subtitle">What is live, what needs attention, and how reviewers are using your previews.</p>
+        </div>
+        <div className="ps-page-actions">
+          <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New share</button>
         </div>
       </div>
 
       <div className="ps-page-content">
-        {tunnels.length === 0 && (
-          <div className="ps-card ps-overview-card animate-fade-up">
-            <div className="ps-overview-card-head">
-              <div>
-                <div className="ps-overview-card-title">Share your first app</div>
-                <div className="ps-overview-card-sub">Create a project, pick the ports your app runs on and get a link anyone can open.</div>
-              </div>
-              <button className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New preview</button>
-            </div>
-          </div>
-        )}
-
         <div className="ps-overview-stats animate-fade-up">
           <div className="ps-stat-card">
             <div className="ps-stat-card-label">Requests</div>
@@ -114,9 +167,75 @@ export default function DashboardPage({
 
         {tunnels.length > 0 && (
           <div className="animate-fade-up delay-100">
-            <ConnectionPanel tunnels={tunnels} events={connectionEvents} />
+            <ConnectionPanel tunnels={tunnels} events={connectionEvents} onNewShare={onNewShare} />
           </div>
         )}
+
+        <div className="ps-overview-grid animate-fade-up delay-100">
+          <div className="ps-card ps-overview-card">
+            <div className="ps-overview-card-head">
+              <div>
+                <div className="ps-overview-card-title">Active shares</div>
+                <div className="ps-overview-card-sub">Previews and services currently running</div>
+              </div>
+              <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onViewShares}>Projects</button>
+            </div>
+            {activeShareRows.length === 0 ? (
+              <div className="ps-overview-empty">
+                <PremiumEmpty
+                  compact
+                  title="No live shares"
+                  action={<button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New Share</button>}
+                >
+                  Start a web or Android preview — it shows up here while it’s running.
+                </PremiumEmpty>
+              </div>
+            ) : (
+              <div className="ps-top-paths">
+                {activeShareRows.map(tunnel => (
+                  <div key={tunnel.id} className="ps-top-path">
+                    <span className="ps-top-path-name" title={shareLabel(tunnel)}>{shareLabel(tunnel)}</span>
+                    <span className="ps-top-path-count">
+                      {tunnel.tunnelType === 'mobile' ? 'Android' : `:${tunnel.port}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="ps-card ps-overview-card">
+            <div className="ps-overview-card-head">
+              <div>
+                <div className="ps-overview-card-title">Recent activity</div>
+                <div className="ps-overview-card-sub">Feedback and connection events</div>
+              </div>
+              <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onViewFeedback}>Feedback</button>
+            </div>
+            {activity.length === 0 ? (
+              <div className="ps-overview-empty">
+                <PremiumEmpty compact title="Quiet for now">
+                  Feedback pins and connection events appear here as reviewers use your shares.
+                </PremiumEmpty>
+              </div>
+            ) : (
+              <div className="ps-top-paths">
+                {activity.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="ps-top-path"
+                    style={{ width: '100%', background: 'transparent', border: 0, color: 'inherit', cursor: item.onClick ? 'pointer' : 'default', textAlign: 'left' }}
+                    onClick={item.onClick}
+                  >
+                    <span className="ps-top-path-name" title={item.label}>{item.label}</span>
+                    <span className="ps-top-path-count">{item.when}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="ps-card ps-overview-card animate-fade-up delay-100">
           <div className="ps-overview-card-head">
@@ -163,7 +282,11 @@ export default function DashboardPage({
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="ps-overview-empty">Daily usage shows up here once your shares get traffic.</div>
+            <div className="ps-overview-empty">
+              <PremiumEmpty compact title="No traffic yet">
+                Daily usage shows up here once reviewers open your shares.
+              </PremiumEmpty>
+            </div>
           )}
         </div>
 
@@ -177,7 +300,15 @@ export default function DashboardPage({
               <button className="ps-btn ps-btn-ghost ps-btn-sm" onClick={onViewRequests}>View requests</button>
             </div>
             {stats.total === 0 ? (
-              <div className="ps-overview-empty">No requests yet.</div>
+              <div className="ps-overview-empty">
+                <PremiumEmpty
+                  compact
+                  title="No requests yet"
+                  action={<button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={onViewRequests}>Open requests</button>}
+                >
+                  Send a share link; each page load lands in Requests with status and timing.
+                </PremiumEmpty>
+              </div>
             ) : (
               <div className="ps-status-rows">
                 {stats.groups.map(group => (
@@ -210,7 +341,11 @@ export default function DashboardPage({
               </div>
             </div>
             {stats.topPaths.length === 0 ? (
-              <div className="ps-overview-empty">No requests yet.</div>
+              <div className="ps-overview-empty">
+                <PremiumEmpty compact title="Paths appear with traffic">
+                  Once people hit your preview, the busiest routes show up here.
+                </PremiumEmpty>
+              </div>
             ) : (
               <div className="ps-top-paths">
                 {stats.topPaths.map(([path, count]) => (

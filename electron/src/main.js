@@ -7,7 +7,10 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { connectTunnel } = require('./tunnel');
 const { registerReviewHandlers } = require('./review');
+const { registerMobileHandlers, stopAllMobileSessions } = require('./mobile');
 
+// Squirrel install/update hooks must exit before any window is created.
+// Otherwise Windows briefly shows Electron's default install UI on first open.
 if (require('electron-squirrel-startup')) {
   app.quit();
 }
@@ -290,6 +293,8 @@ const sendToWindow = (channel, ...args) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
 };
 
+registerMobileHandlers(sendToWindow);
+
 ipcMain.handle('kexoz:start-tunnel', async (_event, config) => {
   const key = config.key || 'legacy';
   tunnels.get(key)?.close();
@@ -315,25 +320,47 @@ ipcMain.handle('kexoz:set-tunnel-port', async (_event, key, port) => {
   return true;
 });
 
+const sendTrayAction = (action) => {
+  mainWindow?.show();
+  mainWindow?.focus();
+  mainWindow?.webContents.send('kexoz:tray-action', action);
+};
+
 ipcMain.handle('kexoz:update-tray', async (_event, shares) => {
   if (!tray) return false;
   const menuItems = [];
   menuItems.push({ label: 'Show Kexoz', click: () => { mainWindow?.show(); mainWindow?.focus(); } });
   menuItems.push({ label: 'Hide Kexoz', click: () => mainWindow?.hide() });
+  menuItems.push({ type: 'separator' });
+  menuItems.push({ label: 'New Share', click: () => sendTrayAction('new-share') });
+  menuItems.push({ label: 'Overview', click: () => sendTrayAction('overview') });
+  menuItems.push({ label: 'Projects', click: () => sendTrayAction('projects') });
+  menuItems.push({ label: 'Open feedback', click: () => sendTrayAction('feedback') });
 
   if (Array.isArray(shares) && shares.length > 0) {
     menuItems.push({ type: 'separator' });
-    menuItems.push({ label: 'Shares', enabled: false });
+    menuItems.push({ label: 'Active shares', enabled: false });
     shares.forEach(t => {
       const name = typeof t.name === 'string' ? t.name.trim().slice(0, 60) : '';
       const label = name ? `${name} (${t.subdomain})` : `${t.subdomain} (:${t.port})`;
+      const live = tunnels.has(t.id);
       menuItems.push({
-        label: tunnels.has(t.id) ? `● ${label}` : label,
+        label: live ? `● ${label}` : label,
         submenu: [
-          { label: 'Copy URL', click: () => {
+          { label: 'Copy preview URL', click: () => {
             const domain = t.customDomain ? t.customDomain : `${t.subdomain}.kexoz.dev`;
             clipboard.writeText(`https://${domain}`);
           }},
+          { label: 'Open preview', click: () => {
+            const domain = t.customDomain ? t.customDomain : `${t.subdomain}.kexoz.dev`;
+            void shell.openExternal(`https://${domain}`);
+          }},
+          ...(live ? [{ label: 'Stop sharing', click: () => {
+            tunnels.get(t.id)?.close();
+            tunnels.delete(t.id);
+            sendToWindow('kexoz:tunnel-state', t.id, 'idle', 'stopped from tray');
+            sendTrayAction('projects');
+          }}] : []),
         ]
       });
     });
@@ -341,7 +368,7 @@ ipcMain.handle('kexoz:update-tray', async (_event, shares) => {
 
   menuItems.push({ type: 'separator' });
   menuItems.push({ label: 'Quit', click: () => { isQuitting = true; app.quit(); } });
-  
+
   tray.setContextMenu(Menu.buildFromTemplate(menuItems));
   return true;
 });
@@ -392,8 +419,19 @@ const createWindow = () => {
 
   mainWindow.setMenu(null);
 
-  mainWindow.once('ready-to-show', () => {
+  const reveal = () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
     mainWindow.show();
+  };
+
+  // Prefer first meaningful paint over Chromium's empty frame.
+  mainWindow.once('ready-to-show', reveal);
+  mainWindow.webContents.once('did-finish-load', reveal);
+  mainWindow.webContents.on('did-fail-load', (_event, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || !mainWindow || mainWindow.isDestroyed()) return;
+    console.error('Kexoz failed to load UI', { code, desc, url });
+    const fallback = path.join(__dirname, 'index.html');
+    void mainWindow.loadFile(fallback).finally(reveal);
   });
 
   mainWindow.on('close', (event) => {
@@ -411,8 +449,10 @@ const createWindow = () => {
 
   if (!app.isPackaged) {
     mainWindow.loadURL(VITE_DEV_URL).catch(() => {
-      const fallback = path.join(__dirname, '../../frontend/dist/index.html');
-      void mainWindow.loadFile(fallback);
+      const built = path.join(__dirname, '../../frontend/dist/index.html');
+      void mainWindow.loadFile(built).catch(() => {
+        void mainWindow.loadFile(path.join(__dirname, 'index.html'));
+      });
     });
     return;
   }
@@ -469,4 +509,5 @@ app.on('before-quit', () => {
   isQuitting = true;
   tunnels.forEach(tunnel => tunnel.close());
   tunnels.clear();
+  stopAllMobileSessions();
 });

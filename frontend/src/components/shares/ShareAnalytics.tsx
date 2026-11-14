@@ -3,6 +3,7 @@ import axios from 'axios'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { fetchShareAnalytics, upgradeUrl, type AnalyticsRange, type PersistentTunnel, type ShareAnalytics } from '../../lib/api'
 import { extractError, formatBytes } from '../../lib/utils'
+import LoadingBlock from '../ui/LoadingBlock'
 
 const RANGES: { id: AnalyticsRange; label: string; days: number }[] = [
   { id: '24h', label: '24 hours', days: 1 },
@@ -84,8 +85,10 @@ export default function ShareAnalyticsSection({ clientId, tunnel }: { clientId: 
             <> <a href={upgradeUrl(clientId, 'pro')} target="_blank" rel="noreferrer">See plans</a></>
           )}
         </p>
+      ) : loading ? (
+        <LoadingBlock label="Loading traffic" compact rows={3} />
       ) : !data || !totals ? (
-        <p className="ps-panel-hint">{loading ? 'Loading…' : 'No traffic recorded yet.'}</p>
+        <p className="ps-panel-hint">No traffic recorded yet.</p>
       ) : (
         <>
           <div className="ps-analytics-stats">

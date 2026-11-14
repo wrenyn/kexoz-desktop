@@ -1,3 +1,4 @@
+import { useDialog } from '../../hooks/useDialog'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import { connectLinear, disconnectLinear, listLinearTeams, validTeamId, type LinearStatus } from '../../lib/linear'
@@ -15,6 +16,7 @@ type Props = {
 export default function LinearModal({ status, teamId, shareName, onStatus, onTeam, onClose }: Props) {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
+  const dialogRef = useDialog(() => { if (!busy) onClose() })
   const [teamDraft, setTeamDraft] = useState(teamId)
   const [teams, setTeams] = useState<{ id: string; name: string; key: string }[]>([])
 
@@ -25,11 +27,7 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
     return () => { alive = false }
   }, [status.connected])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+
 
   const connect = async () => {
     setBusy(true)
@@ -61,7 +59,7 @@ export default function LinearModal({ status, teamId, shareName, onStatus, onTea
 
   return (
     <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="ln-title">
+      <div ref={dialogRef} tabIndex={-1} className="ps-modal ps-rv-modal" role="dialog" aria-modal="true" aria-labelledby="ln-title">
         <div className="ps-modal-header">
           <h2 className="ps-modal-title" id="ln-title">Linear</h2>
         </div>

@@ -1,4 +1,5 @@
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
+import { useDialog } from '../../hooks/useDialog'
 
 export type ConfirmOptions = {
   title: string
@@ -13,26 +14,7 @@ type Props = ConfirmOptions & {
 }
 
 export default function ConfirmDialog({ title, message, confirmLabel, tone = 'default', onConfirm, onCancel }: Props) {
-  const dialogRef = useRef<HTMLDivElement>(null)
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      onCancel()
-      return
-    }
-    if (event.key !== 'Tab' || !dialogRef.current) return
-    const buttons = dialogRef.current.querySelectorAll<HTMLButtonElement>('button')
-    const first = buttons[0]
-    const last = buttons[buttons.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
+  const dialogRef = useDialog(onCancel)
 
   return (
     <div className="ps-modal-overlay" onClick={onCancel}>
@@ -44,11 +26,16 @@ export default function ConfirmDialog({ title, message, confirmLabel, tone = 'de
         aria-labelledby="confirm-title"
         aria-describedby="confirm-message"
         onClick={event => event.stopPropagation()}
-        onKeyDown={handleKeyDown}
+        tabIndex={-1}
       >
-        <div className="ps-confirm-body">
-          <h2 className="ps-confirm-title" id="confirm-title">{title}</h2>
-          <div className="ps-confirm-message" id="confirm-message">{message}</div>
+        <div className={`ps-confirm-body ${tone === 'danger' ? 'is-danger' : ''}`}>
+          <div className={`ps-confirm-icon ${tone === 'danger' ? 'is-danger' : ''}`} aria-hidden="true">
+            {tone === 'danger' ? '!' : '?'}
+          </div>
+          <div className="ps-confirm-copy">
+            <h2 className="ps-confirm-title" id="confirm-title">{title}</h2>
+            <div className="ps-confirm-message" id="confirm-message">{message}</div>
+          </div>
         </div>
         <div className="ps-confirm-footer">
           <button type="button" className="ps-btn ps-btn-secondary" onClick={onCancel} autoFocus>

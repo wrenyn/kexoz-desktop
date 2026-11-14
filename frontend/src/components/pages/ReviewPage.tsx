@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-hot-toast'
-import { createReviewLink, reviewWorkspaceUrl, type PersistentTunnel, type PreviewNote, type PreviewRevision } from '../../lib/api'
-import { createIssueForNote, githubAvailable, githubStatus, repoForShare, setRepoForShare, type GitHubStatus } from '../../lib/github'
-import { createLinearIssueForNote, linearAvailable, linearStatus, setTeamForShare, teamForShare, type LinearStatus } from '../../lib/linear'
+import { createReviewLink, listProjects, reviewFeedbackUrl, reviewWorkspaceUrl, type PersistentTunnel, type PreviewNote, type PreviewRevision } from '../../lib/api'
 import { noteColors } from '../../lib/noteColors'
 import { afterShot, approvalSummary, latestDecisions, revisionName, timeAgo } from '../../lib/review'
 import { isGatedType, shareLabel, shareUrl } from '../../lib/shares'
@@ -11,13 +9,14 @@ import { useConfirm } from '../../hooks/useConfirm'
 import { notesChanged } from '../../hooks/useOpenFeedback'
 import { useReview } from '../../hooks/useReview'
 import CompareView, { type CompareSide } from '../review/CompareView'
-import GitHubModal from '../review/GitHubModal'
-import LinearModal from '../review/LinearModal'
 import NoteThread from '../review/NoteThread'
 import RevisionModal from '../review/RevisionModal'
 import Snapshot from '../review/Snapshot'
+import LoadingBlock from '../ui/LoadingBlock'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import Spinner from '../ui/Spinner'
 
-type Tab = 'feedback' | 'revisions' | 'compare'
+type Tab = 'feedback' | 'versions' | 'compare'
 type Filter = 'open' | 'in_progress' | 'resolved' | 'all'
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -44,22 +43,20 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
   const { confirm, dialog } = useConfirm()
   const [tab, setTab] = useState<Tab>('feedback')
   const [filter, setFilter] = useState<Filter>('open')
-  const [modal, setModal] = useState<{ kind: 'revision'; revision?: PreviewRevision } | { kind: 'github' } | { kind: 'linear' } | null>(null)
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState<{ kind: 'revision'; revision?: PreviewRevision } | null>(null)
   const [viewing, setViewing] = useState<PreviewNote | null>(null)
   const [opening, setOpening] = useState(false)
-  const [gh, setGh] = useState<GitHubStatus>({ connected: false, login: '', encrypted: false })
-  const [repo, setRepo] = useState('')
-  const [ln, setLn] = useState<LinearStatus>({ connected: false, name: '', encrypted: false })
-  const [teamId, setTeamId] = useState('')
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
+  const [projectId, setProjectId] = useState<string>('')
 
   useEffect(() => {
-    if (githubAvailable()) githubStatus().then(setGh).catch(() => {})
-    if (linearAvailable()) linearStatus().then(setLn).catch(() => {})
-  }, [])
-
-  useEffect(() => { setRepo(tunnel ? repoForShare(tunnel.id) : '') }, [tunnel])
-  useEffect(() => { setTeamId(tunnel ? teamForShare(tunnel.id) : '') }, [tunnel])
+    if (!clientId || !tunnel?.id) { setProjectId(''); return }
+    void listProjects(clientId).then(projects => {
+      const match = projects.find(p => (p.tunnelIds || []).includes(tunnel.id))
+      setProjectId(match?.id || '')
+    }).catch(() => setProjectId(''))
+  }, [clientId, tunnel?.id])
 
   useEffect(() => {
     if (!focusNoteId || !loaded) return
@@ -77,8 +74,6 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
     })
   }, [focusNoteId, loaded, notes, onFocusNoteHandled])
 
-  const github = { ready: gh.connected, repo }
-  const linear = { ready: ln.connected, teamId }
   const colors = useMemo(() => noteColors(notes), [notes])
   const numbers = useMemo(() => {
     const order = [...notes].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -90,9 +85,18 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
     resolved: notes.filter(note => note.status === 'resolved').length,
     all: notes.length,
   }), [notes])
-  const shown = useMemo(() => notes
-    .filter(note => filter === 'all' || note.status === filter)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [notes, filter])
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return notes
+      .filter(note => filter === 'all' || note.status === filter)
+      .filter(note => {
+        if (!q) return true
+        return [note.body, note.author, note.path, note.target]
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(q))
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }, [notes, filter, query])
 
   const openAsOwner = async () => {
     if (!tunnel) return
@@ -104,18 +108,6 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
       toast.error(extractError(err))
     } finally {
       setOpening(false)
-    }
-  }
-
-  const createIssue = async (note: PreviewNote, provider: 'github' | 'linear') => {
-    if (!tunnel) return
-    try {
-      const url = provider === 'linear'
-        ? await createLinearIssueForNote(teamId, tunnel, note)
-        : await createIssueForNote(repo, tunnel, note)
-      if (await review.linkIssue(note, url)) toast.success('Issue created')
-    } catch (err) {
-      toast.error(extractError(err))
     }
   }
 
@@ -133,18 +125,6 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
     if (ok) await review.removeRevision(revision)
   }
 
-  const saveRepo = (next: string) => {
-    if (!tunnel) return
-    setRepoForShare(tunnel.id, next)
-    setRepo(repoForShare(tunnel.id))
-  }
-
-  const saveTeam = (next: string) => {
-    if (!tunnel) return
-    setTeamForShare(tunnel.id, next)
-    setTeamId(teamForShare(tunnel.id))
-  }
-
   const closeModal = useCallback(() => setModal(null), [])
 
   if (!tunnel) {
@@ -152,16 +132,15 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
       <div className="ps-main">
         <div className="ps-page-header animate-fade-down">
           <div>
-            <h1 className="ps-page-title">Review</h1>
-            <p className="ps-page-subtitle">Pinned notes, revisions, and approvals on live previews</p>
+            <h1 className="ps-page-title">Feedback</h1>
+            <p className="ps-page-subtitle">Pinned notes, versions, and approvals on live previews</p>
           </div>
         </div>
         <div className="ps-page-content animate-fade-up">
           <div className="ps-card">
-            <div className="ps-empty">
-              <span className="ps-empty-title">No web shares yet</span>
-              <span className="ps-empty-sub">Share a web app and turn on preview tools; reviewers can then pin feedback right on the page.</span>
-            </div>
+            <PremiumEmpty title="No preview shares yet">
+              Share a web app with visual review — feedback from reviewers shows up here. Create one from Projects → New Share. Mobile preview is coming soon.
+            </PremiumEmpty>
           </div>
         </div>
       </div>
@@ -175,7 +154,7 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
     <div className="ps-main">
       <div className="ps-page-header animate-fade-down">
         <div>
-          <h1 className="ps-page-title">Review</h1>
+          <h1 className="ps-page-title">Feedback</h1>
           <p className="ps-page-subtitle">
             {counts.open + counts.in_progress === 0 ? 'No open feedback' : `${counts.open} open · ${counts.in_progress} in progress`}
             {revisions.length > 0 && ` · latest ${revisionName(revisions[revisions.length - 1])}`}
@@ -183,25 +162,27 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
         </div>
         <div className="ps-rv-header-actions">
           <select className="ps-select" value={tunnel.id} onChange={event => onSelect(event.target.value)} aria-label="Share">
-            {shares.map(item => <option key={item.id} value={item.id}>{shareLabel(item)}</option>)}
+            {shares.map(item => (
+              <option key={item.id} value={item.id}>
+                {shareLabel(item)}{item.tunnelType === 'mobile' ? ' · Android' : ''}
+              </option>
+            ))}
           </select>
-          {githubAvailable() && (
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setModal({ kind: 'github' })}>
-              {gh.connected ? (repo || 'Pick a repository') : 'Connect GitHub'}
-            </button>
-          )}
-          {linearAvailable() && (
-            <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm" onClick={() => setModal({ kind: 'linear' })}>
-              {ln.connected ? (teamId ? 'Linear connected' : 'Pick a Linear team') : 'Connect Linear'}
-            </button>
-          )}
-          <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void openAsOwner()} disabled={opening || !tunnel.preview}>
-            {opening ? 'Opening…' : 'Open as owner'}
+          <input
+            className="ps-input"
+            style={{ minWidth: 160, maxWidth: 220 }}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Search feedback"
+            aria-label="Search feedback"
+          />
+          <button type="button" className={`ps-btn ps-btn-secondary ps-btn-sm ${opening ? 'is-loading' : ''}`} onClick={() => void openAsOwner()} disabled={opening || !tunnel.preview} aria-busy={opening || undefined}>
+            {opening ? <><Spinner size={13} /> Opening</> : 'Open as owner'}
           </button>
           <a className="ps-btn ps-btn-ghost ps-btn-sm" href={reviewWorkspaceUrl(clientId)} target="_blank" rel="noreferrer">
             Team board
           </a>
-          <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => setModal({ kind: 'revision' })}>New revision</button>
+          <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={() => setModal({ kind: 'revision' })}>New version</button>
         </div>
       </div>
 
@@ -215,7 +196,7 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
         <div className="ps-rv-tabs" role="tablist">
           {([
             ['feedback', `Feedback${counts.open + counts.in_progress ? ` · ${counts.open + counts.in_progress}` : ''}`],
-            ['revisions', `Revisions${revisions.length ? ` · ${revisions.length}` : ''}`],
+            ['versions', `Versions${revisions.length ? ` · ${revisions.length}` : ''}`],
             ['compare', 'Compare'],
           ] as const).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className={`ps-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}</button>
@@ -232,13 +213,19 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
               ))}
             </div>
             {!loaded ? (
-              <div className="ps-card"><div className="ps-empty"><span className="ps-empty-sub">Loading feedback…</span></div></div>
+              <div className="ps-card"><LoadingBlock label="Loading feedback" rows={4} /></div>
             ) : shown.length === 0 ? (
               <div className="ps-card">
-                <div className="ps-empty">
-                  <span className="ps-empty-title">{filter === 'all' ? 'No feedback yet' : `Nothing ${FILTERS.find(f => f.id === filter)?.label.toLowerCase()}`}</span>
-                  <span className="ps-empty-sub">Send the link to a reviewer; they click Add note on the page and pin it where something needs work.</span>
-                </div>
+                <PremiumEmpty
+                  title={filter === 'all' ? 'No feedback yet' : `Nothing ${FILTERS.find(f => f.id === filter)?.label.toLowerCase()}`}
+                  action={tunnel ? (
+                    <button type="button" className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void navigator.clipboard.writeText(shareUrl(tunnel))}>
+                      Copy share link
+                    </button>
+                  ) : undefined}
+                >
+                  Send the link to a reviewer; they click Add note on the page and pin it where something needs work.
+                </PremiumEmpty>
               </div>
             ) : (
               <div className="ps-rv-notes">
@@ -252,13 +239,9 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
                     color={colors.get(note.id) ?? '#888'}
                     revisions={revisions}
                     busy={busyId === note.id}
-                    github={github}
-                    linear={linear}
                     focused={activeNoteId === note.id}
                     onAct={async (action, options) => {
                       const ok = await review.act(note, action, options)
-                      // Keep the note visible after status changes — the default
-                      // Open filter would hide it and feel like the click did nothing.
                       if (ok) {
                         if (action === 'start') setFilter('in_progress')
                         else if (action === 'resolve') setFilter('resolved')
@@ -269,9 +252,9 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
                     onReply={body => review.reply(note, body)}
                     onDeleteReply={replyId => void review.removeReply(note, replyId)}
                     onDelete={() => void removeNote(note)}
-                    onCreateIssue={provider => void createIssue(note, provider)}
                     onLinkIssue={url => review.linkIssue(note, url)}
                     onCompare={() => setViewing(note)}
+                    webDetailUrl={projectId ? reviewFeedbackUrl(clientId, projectId, note.id) : undefined}
                   />
                 ))}
               </div>
@@ -279,7 +262,7 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
           </>
         )}
 
-        {tab === 'revisions' && (
+        {tab === 'versions' && (
           <RevisionList
             clientId={clientId}
             notes={notes}
@@ -299,17 +282,9 @@ export default function ReviewPage({ clientId, tunnels, selectedId, onSelect, fo
           tunnel={tunnel}
           notes={notes}
           revision={modal.revision}
-          github={github}
-          linear={linear}
           onClose={closeModal}
           onSaved={() => { void review.refresh(); notesChanged() }}
         />
-      )}
-      {modal?.kind === 'github' && (
-        <GitHubModal status={gh} repo={repo} shareName={shareLabel(tunnel)} onStatus={setGh} onRepo={saveRepo} onClose={closeModal} />
-      )}
-      {modal?.kind === 'linear' && (
-        <LinearModal status={ln} teamId={teamId} shareName={shareLabel(tunnel)} onStatus={setLn} onTeam={saveTeam} onClose={closeModal} />
       )}
       {viewing && (viewingBefore || viewingAfter) && (
         <div className="ps-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setViewing(null) }}>
@@ -351,7 +326,7 @@ function RevisionList({ clientId, notes, revisions, busyId, onEdit, onDelete }: 
     return (
       <div className="ps-card">
         <div className="ps-empty">
-          <span className="ps-empty-title">No revisions yet</span>
+          <span className="ps-empty-title">No versions yet</span>
           <span className="ps-empty-sub">Publish one after you ship changes; reviewers see which feedback it fixes and can approve it.</span>
         </div>
       </div>

@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('kexoz', {
   stopTunnel: (key) => ipcRenderer.invoke('kexoz:stop-tunnel', key),
   setTunnelPort: (key, port) => ipcRenderer.invoke('kexoz:set-tunnel-port', key, port),
   updateTray: (tunnels) => ipcRenderer.invoke('kexoz:update-tray', tunnels),
+  onTrayAction: (callback) => {
+    const handler = (_event, action) => callback(action);
+    ipcRenderer.on('kexoz:tray-action', handler);
+    return () => ipcRenderer.removeListener('kexoz:tray-action', handler);
+  },
   setAutoStart: (enabled) => ipcRenderer.invoke('kexoz:set-autostart', enabled),
   listListeningPorts: () => ipcRenderer.invoke('kexoz:list-listening-ports'),
   diagnose: (config) => ipcRenderer.invoke('kexoz:diagnose', config),
@@ -31,5 +36,16 @@ contextBridge.exposeInMainWorld('kexoz', {
     const handler = (_event, key, entry) => callback(key, entry);
     ipcRenderer.on('kexoz:tunnel-log', handler);
     return () => ipcRenderer.removeListener('kexoz:tunnel-log', handler);
-  }
+  },
+  adbListDevices: () => ipcRenderer.invoke('kexoz:adb-list-devices'),
+  adbDiagnose: () => ipcRenderer.invoke('kexoz:adb-diagnose'),
+  mobilePreviewStart: (payload) => ipcRenderer.invoke('kexoz:mobile-preview-start', payload),
+  mobilePreviewStop: (sessionId) => ipcRenderer.invoke('kexoz:mobile-preview-stop', sessionId),
+  mobilePreviewRevoke: (sessionId) => ipcRenderer.invoke('kexoz:mobile-preview-revoke', sessionId),
+  mobileSessions: () => ipcRenderer.invoke('kexoz:mobile-sessions'),
+  onMobileState: (callback) => {
+    const handler = (_event, sessionId, kind, data) => callback(sessionId, kind, data);
+    ipcRenderer.on('kexoz:mobile-state', handler);
+    return () => ipcRenderer.removeListener('kexoz:mobile-state', handler);
+  },
 });

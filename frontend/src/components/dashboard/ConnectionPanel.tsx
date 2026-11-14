@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { API_BASE_URL, type PersistentTunnel } from '../../lib/api'
 import { extraRoutes, shareUrl } from '../../lib/shares'
 import { shareHealth, type ConnectionEvent } from '../../hooks/useConnectionHistory'
+import PremiumEmpty from '../ui/PremiumEmpty'
+import Spinner from '../ui/Spinner'
 
 type Props = {
   tunnels: PersistentTunnel[]
   events: ConnectionEvent[]
+  onNewShare?: () => void
 }
 
 type Check = { label: string; ok: boolean; detail: string }
@@ -26,7 +29,7 @@ const STATE_LABEL = {
   idle: { text: 'Not connected', className: 'ps-badge-gray' },
 } as const
 
-export default function ConnectionPanel({ tunnels, events }: Props) {
+export default function ConnectionPanel({ tunnels, events, onNewShare }: Props) {
   const [now, setNow] = useState(() => Date.now())
   const [checks, setChecks] = useState<Check[] | null>(null)
   const [running, setRunning] = useState(false)
@@ -45,7 +48,9 @@ export default function ConnectionPanel({ tunnels, events }: Props) {
     setRunning(true)
     setChecks(null)
     try {
-      const ports = [...new Set(live.flatMap(t => [t.port, ...extraRoutes(t).map(route => route.port)]))]
+      const ports = [...new Set(live
+        .filter(t => t.tunnelType !== 'mobile')
+        .flatMap(t => [t.port, ...extraRoutes(t).map(route => route.port)]))]
       if (!window.kexoz?.diagnose) {
         const start = Date.now()
         const ok = await fetch(`${API_BASE_URL}/health/live`).then(res => res.ok).catch(() => false)
@@ -64,6 +69,12 @@ export default function ConnectionPanel({ tunnels, events }: Props) {
         })),
       ]
       if (result.proxy) next.push({ label: 'Proxy', ok: true, detail: `${result.proxy}. If shares keep dropping, try without it.` })
+      if (live.some(t => t.tunnelType === 'mobile') && window.kexoz?.adbDiagnose) {
+        const adb = await window.kexoz.adbDiagnose()
+        for (const row of adb.rows || []) {
+          next.push({ label: `Android · ${row.id}`, ok: row.ok, detail: row.detail })
+        }
+      }
       setChecks(next)
     } catch (err) {
       setChecks([{ label: 'Diagnostics', ok: false, detail: err instanceof Error ? err.message : 'Could not run the checks' }])
@@ -77,15 +88,23 @@ export default function ConnectionPanel({ tunnels, events }: Props) {
       <div className="ps-overview-card-head">
         <div>
           <div className="ps-overview-card-title">Connection</div>
-          <div className="ps-overview-card-sub">Status of running shares over the last 24 hours</div>
+          <div className="ps-overview-card-sub">Whether your machine is still linked to each live share</div>
         </div>
-        <button className="ps-btn ps-btn-secondary ps-btn-sm" onClick={() => void diagnose()} disabled={running}>
-          {running ? 'Checking…' : 'Run diagnostics'}
+        <button className={`ps-btn ps-btn-secondary ps-btn-sm ${running ? 'is-loading' : ''}`} onClick={() => void diagnose()} disabled={running} aria-busy={running || undefined} title="Checks internet, DNS, Kexoz servers, and local ports">
+          {running ? <><Spinner size={13} /> Checking</> : 'Run diagnostics'}
         </button>
       </div>
 
       {live.length === 0 ? (
-        <div className="ps-overview-empty">No shares are running.</div>
+        <div className="ps-overview-empty">
+          <PremiumEmpty
+            compact
+            title="No shares are running"
+            action={onNewShare ? <button type="button" className="ps-btn ps-btn-primary ps-btn-sm" onClick={onNewShare}>New Share</button> : undefined}
+          >
+            Start one to see live status and uptime here.
+          </PremiumEmpty>
+        </div>
       ) : (
         <div className="ps-conn-rows">
           {live.map(tunnel => {
@@ -95,7 +114,10 @@ export default function ConnectionPanel({ tunnels, events }: Props) {
             return (
               <div key={tunnel.id} className="ps-conn-row">
                 <div className="ps-conn-main">
-                  <span className="ps-conn-name">{names.get(tunnel.id)}</span>
+                  <span className="ps-conn-name">
+                    {names.get(tunnel.id)}
+                    {tunnel.tunnelType === 'mobile' ? ' · Android' : ''}
+                  </span>
                   <span className="ps-overview-card-sub">
                     {health.state === 'connected' && health.connectedSince ? `Connected for ${duration(now - health.connectedSince)}` : label.text}
                     {uptime !== null && ` · ${uptime}% uptime`}

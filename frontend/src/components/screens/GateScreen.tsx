@@ -1,4 +1,6 @@
 import Logo from '../ui/Logo'
+import Spinner from '../ui/Spinner'
+import TrustNote from '../ui/TrustNote'
 
 type GateScreenProps = {
   onLogin: () => void
@@ -39,7 +41,7 @@ export default function GateScreen({ onLogin, onSkip, verifying, code }: GateScr
 
         <div className="animate-gate-line-3 ps-gate-actions">
           <button type="button" className="ps-gate-google" onClick={onLogin} disabled={verifying}>
-            {verifying ? <><span className="ps-gate-spinner" aria-hidden="true" /> Waiting for Google…</> : <><GoogleMark /> Continue with Google</>}
+            {verifying ? <><Spinner size={14} /> Waiting for Google</> : <><GoogleMark /> Continue with Google</>}
           </button>
           <p className="ps-gate-note">The full free plan: 5 shares, password protection and preview notes.</p>
 
@@ -48,6 +50,10 @@ export default function GateScreen({ onLogin, onSkip, verifying, code }: GateScr
           </button>
           {!verifying && <p className="ps-gate-note">Up to 3 shares. You can sign in later.</p>}
         </div>
+
+        <TrustNote title="You stay in control" tone="ok">
+          Previews run from this computer. Stop sharing anytime and reviewers lose access immediately.
+        </TrustNote>
       </div>
     </div>
   )

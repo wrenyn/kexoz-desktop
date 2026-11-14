@@ -17,6 +17,8 @@ module.exports = {
         name: 'kexoz-desktop',
         setupExe: 'Kexoz-Setup.exe',
         setupIcon: './assets/icon.ico',
+        // Replace Electron's default atom spinner during install / first launch.
+        loadingGif: './assets/install-spinner.gif',
         // Squirrel needs a URL for the Programs and Features icon.
         iconUrl: 'https://raw.githubusercontent.com/wrenyn/kexoz-desktop/main/electron/assets/icon.ico',
       },
